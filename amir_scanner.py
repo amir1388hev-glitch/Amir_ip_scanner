@@ -132,8 +132,8 @@ def get_ips_from_github(url):
         if response.status_code == 200:
             lines = response.text.splitlines()
             ips = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
-            print(Colors.GREEN + f"[+] Loaded {len(ips)} IPs from GitHub repository." + Colors.END)
-            return ips
+            print(Colors.GREEN + f"[+] Loaded {len(ips)} raw entries from GitHub." + Colors.END)
+            return parse_ip_input(",".join(ips))
         else:
             print(Colors.RED + f"[!] Download error: Status code {response.status_code}" + Colors.END)
             return []
@@ -176,10 +176,8 @@ def parse_ip_input(user_input):
         if "/" in entry:
             try:
                 network = ipaddress.ip_network(entry, strict=False)
-                hosts = list(network.hosts())
-                count = min(1000000, len(hosts))
-                for i in range(count):
-                    ips.append(str(hosts[i]))
+                for ip in network.hosts():
+                    ips.append(str(ip))
             except Exception:
                 pass
         elif "-" in entry and "." in entry:
@@ -193,11 +191,9 @@ def parse_ip_input(user_input):
                 start = ipaddress.ip_address(start_ip)
                 end = ipaddress.ip_address(end_ip)
                 current = start
-                count = 0
-                while current <= end and count < 1000000:
+                while current <= end:
                     ips.append(str(current))
                     current += 1
-                    count += 1
             except Exception:
                 pass
         else:
@@ -226,7 +222,7 @@ def get_manual_ips():
             break
     user_input = ",".join(lines)
     ips = parse_ip_input(user_input)
-    print(Colors.GREEN + f"[+] Loaded {len(ips)} IPs manually." + Colors.END)
+    print(Colors.GREEN + f"[+] Expanded to {len(ips)} individual IPs." + Colors.END)
     return ips
 
 
@@ -337,24 +333,21 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers)
     total_ips = len(ips)
     working_results = []
     completed_count = [0]
-    failed_count = [0]
 
     print(Colors.BLUE + f"\n[*] Scanning {total_ips} IPs using {workers} parallel workers...\n" + Colors.END)
 
     def worker_task(ip):
         lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
         completed_count[0] += 1
-        percent = int((completed_count[0] / total_ips) * 100)
         
-        # خط درصد و تعداد کل و در حال تست پایین صفحه
-        status_line = f"[*] Total IPs: {total_ips} | Progress: {completed_count[0]}/{total_ips} ({percent}%) | Working: {len(working_results)} | Failed: {failed_count[0]}"
-        print(Colors.CYAN + f"\r{status_line:<85}" + Colors.END, end="", flush=True)
+        # خط ثابت پایین صفحه با فرمت خواسته شده (تست شده / کل)
+        status_line = f"[*] Progress: {completed_count[0]}/{total_ips} IPs Tested"
+        print(Colors.CYAN + f"\r{status_line:<60}" + Colors.END, end="", flush=True)
 
         if lat is not None:
             working_results.append((ip, lat))
             return (ip, lat)
         else:
-            failed_count[0] += 1
             return None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -364,7 +357,7 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers)
 
     print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
-    return working_results, total_ips, failed_count[0]
+    return working_results, total_ips
 
 
 def menu_option_1():
@@ -374,7 +367,7 @@ def menu_option_1():
         print(Colors.RED + "[!] No IPs available to test." + Colors.END)
         return
 
-    working_ips, total_ips, failed_count = run_scanner_engine(
+    working_ips, total_ips = run_scanner_engine(
         ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
@@ -388,7 +381,7 @@ def menu_option_1():
     if working_ips:
         msg = f"Clean IPs:\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
         send_all(msg)
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Failed: {failed_count} | Total: {total_ips}" + Colors.END)
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
 
 
 def menu_option_2():
@@ -399,20 +392,17 @@ def menu_option_2():
     total_combinations = len(tasks_list)
     completed_count = [0]
     results = []
-    failed_count = [0]
 
     def worker_task(item):
         ip, port = item
         lat = check_ip_http_latency(ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
         completed_count[0] += 1
-        percent = int((completed_count[0] / total_combinations) * 100)
-        status_line = f"[*] Total: {total_combinations} | Progress: {completed_count[0]}/{total_combinations} ({percent}%) | Working: {len(results)} | Failed: {failed_count[0]}"
-        print(Colors.CYAN + f"\r{status_line:<85}" + Colors.END, end="", flush=True)
+        status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} IPs Tested"
+        print(Colors.CYAN + f"\r{status_line:<60}" + Colors.END, end="", flush=True)
         if lat is not None:
             results.append((f"{ip}:{port}", lat))
             return (f"{ip}:{port}", lat)
         else:
-            failed_count[0] += 1
             return None
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
@@ -428,7 +418,7 @@ def menu_option_2():
     output = "\n".join([item[0] for item in results])
     save_to_file(SAVE_FILENAME, output)
     if results: send_all(f"Healthy IPs:\n\n{output}\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}")
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(results)} | Failed: {failed_count} | Total: {total_combinations}" + Colors.END)
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(results)} | Total: {total_combinations}" + Colors.END)
 
 
 def menu_option_3():
@@ -439,20 +429,17 @@ def menu_option_3():
     total_combinations = len(tasks_list)
     completed_count = [0]
     results = []
-    failed_count = [0]
 
     def worker_task(item):
         ip, port = item
         connected = check_ip_port_connection(ip, port, timeout=2.0)
         completed_count[0] += 1
-        percent = int((completed_count[0] / total_combinations) * 100)
-        status_line = f"[*] Total: {total_combinations} | Progress: {completed_count[0]}/{total_combinations} ({percent}%) | Open: {len(results)} | Closed: {failed_count[0]}"
-        print(Colors.CYAN + f"\r{status_line:<85}" + Colors.END, end="", flush=True)
+        status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} IPs Tested"
+        print(Colors.CYAN + f"\r{status_line:<60}" + Colors.END, end="", flush=True)
         if connected:
             results.append(f"{ip}:{port}")
             return f"{ip}:{port}"
         else:
-            failed_count[0] += 1
             return None
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
@@ -467,7 +454,7 @@ def menu_option_3():
     output = "\n".join(results)
     save_to_file(SAVE_FILENAME, output)
     if results: send_all(f"Open Ports:\n\n{output}\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}")
-    print(Colors.GREEN + f"\n[SUMMARY] Open: {len(results)} | Closed: {failed_count} | Total: {total_combinations}" + Colors.END)
+    print(Colors.GREEN + f"\n[SUMMARY] Open: {len(results)} | Total: {total_combinations}" + Colors.END)
 
 
 def menu_option_4():
@@ -477,7 +464,7 @@ def menu_option_4():
     ips = select_ip_source()
     if not ips: return
     
-    working_ips, total_ips, failed_count = run_scanner_engine(
+    working_ips, total_ips = run_scanner_engine(
         ips, 443, "chatgpt.com", 3.0, True, "/", SCAN_SETTINGS['workers']
     )
     
@@ -487,7 +474,7 @@ def menu_option_4():
     if working_ips:
         output = "\n".join([f"IP: {item[0]} | Latency: {item[1]}ms" for item in working_ips])
         send_all(f"Config Combined Results:\n\n{raw_config}\n\n{output}\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}")
-    print(Colors.GREEN + f"\n[SUMMARY] Passed: {len(working_ips)} | Failed: {failed_count} | Total: {total_ips}" + Colors.END)
+    print(Colors.GREEN + f"\n[SUMMARY] Passed: {len(working_ips)} | Total: {total_ips}" + Colors.END)
 
 
 def menu_option_5_mahsa():
@@ -511,7 +498,7 @@ def menu_option_5_mahsa():
         print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
         return
 
-    working_ips, total_ips, failed_count = run_scanner_engine(
+    working_ips, total_ips = run_scanner_engine(
         ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
@@ -527,7 +514,7 @@ def menu_option_5_mahsa():
         msg = f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}]:\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
         send_all(msg)
 
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Failed: {failed_count} | Total: {total_ips}" + Colors.END)
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
 
 
 def menu_option_6_custom_scanner():
@@ -560,7 +547,7 @@ def menu_option_6_custom_scanner():
         print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
         return
 
-    working_ips, total_ips, failed_count = run_scanner_engine(
+    working_ips, total_ips = run_scanner_engine(
         ips, CUSTOM_SCAN_SETTINGS['port'], CUSTOM_SCAN_SETTINGS['domain'], 
         CUSTOM_SCAN_SETTINGS['timeout'], CUSTOM_SCAN_SETTINGS['test_download'], 
         CUSTOM_SCAN_SETTINGS['path'], CUSTOM_SCAN_SETTINGS['workers']
@@ -576,7 +563,7 @@ def menu_option_6_custom_scanner():
         msg = f"Custom Scanner Results (Domain: {CUSTOM_SCAN_SETTINGS['domain']}):\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
         send_all(msg)
 
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Failed: {failed_count} | Total: {total_ips}" + Colors.END)
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
 
 
 def main_menu():
