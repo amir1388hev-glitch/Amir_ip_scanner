@@ -41,8 +41,19 @@ TELEGRAM_CHAT_ID = "-1004437972136"
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
+# Global default settings for options 1-5
 SCAN_SETTINGS = {
     "domain": "chatgpt.com",
+    "path": "/",
+    "port": 443,
+    "timeout": 3.0,
+    "workers": 20,
+    "test_download": True
+}
+
+# Dedicated custom settings exclusively for Option 6 Scanner
+CUSTOM_SCAN_SETTINGS = {
+    "domain": "cloudflare.com",
     "path": "/",
     "port": 443,
     "timeout": 3.0,
@@ -54,8 +65,6 @@ PORTS_TO_TEST = [
     443, 8443, 2053, 2083, 2087, 2096,
     80, 8080, 8880, 2052, 2082, 2086, 2095,
 ]
-
-CONFIG_PORTS_TO_TEST = [443, 8443, 80, 2096]
 
 MAHSA_CDN_TYPES = {
     "1": "Cloudflare CDN",
@@ -109,31 +118,6 @@ def get_clean_input(prompt_text):
     except (KeyboardInterrupt, EOFError):
         print(Colors.YELLOW + "\n[*] Exiting..." + Colors.END)
         sys.exit(0)
-
-
-def configure_scan_settings():
-    print(Colors.CYAN + "\n=== Scan Settings ===" + Colors.END)
-    print(f"1. Test Domain (SNI)  : {SCAN_SETTINGS['domain']}")
-    print(f"2. Test Path          : {SCAN_SETTINGS['path']}")
-    print(f"3. Port               : {SCAN_SETTINGS['port']}")
-    print(f"4. Timeout (s)        : {SCAN_SETTINGS['timeout']}")
-    print(f"5. Concurrent Workers : {SCAN_SETTINGS['workers']}")
-    print(f"6. Test Download      : {'Enabled' if SCAN_SETTINGS['test_download'] else 'Disabled'}")
-    
-    choice = input(Colors.BOLD + "\nDo you want to change settings? (y/N): " + Colors.END).strip().lower()
-    if choice == 'y':
-        d = input(f"Enter Test Domain [{SCAN_SETTINGS['domain']}]: ").strip()
-        if d: SCAN_SETTINGS['domain'] = d
-        p = input(f"Enter Port [{SCAN_SETTINGS['port']}]: ").strip()
-        if p.isdigit(): SCAN_SETTINGS['port'] = int(p)
-        t = input(f"Enter Timeout [{SCAN_SETTINGS['timeout']}]: ").strip()
-        try:
-            if t: SCAN_SETTINGS['timeout'] = float(t)
-        except ValueError:
-            pass
-        w = input(f"Enter Concurrent Workers [{SCAN_SETTINGS['workers']}]: ").strip()
-        if w.isdigit(): SCAN_SETTINGS['workers'] = int(w)
-        print(Colors.GREEN + "[+] Settings updated successfully!" + Colors.END)
 
 
 def get_ips_from_github(url):
@@ -516,8 +500,6 @@ def menu_option_5_mahsa():
     failed_count = [0]
 
     print(Colors.BLUE + f"\n[*] Scanning {total_ips} IPs for {profile_name} using Fast Workers ({SCAN_SETTINGS['workers']})...\n" + Colors.END)
-    print(Colors.BOLD + f"{'IP':<18} | {'LATENCY (ms)':<14} | {'STATUS':<10}" + Colors.END)
-    print("-" * 48)
 
     def worker_task(ip):
         lat = check_ip_http_latency(
@@ -558,6 +540,81 @@ def menu_option_5_mahsa():
     print(Colors.GREEN + f"\n[SUMMARY] Total Tested: {total_ips} | Working: {len(working_ips)} | Failed: {failed_count[0]}" + Colors.END)
 
 
+def menu_option_6_custom_scanner():
+    print(Colors.YELLOW + "\n[>] Option 6: Custom Dedicated Scanner & Settings" + Colors.END)
+    print(Colors.CYAN + "\n=== Custom Scanner Configuration ===" + Colors.END)
+    print(f"1. Test Domain (SNI)  : {CUSTOM_SCAN_SETTINGS['domain']}")
+    print(f"2. Test Path          : {CUSTOM_SCAN_SETTINGS['path']}")
+    print(f"3. Port               : {CUSTOM_SCAN_SETTINGS['port']}")
+    print(f"4. Timeout (s)        : {CUSTOM_SCAN_SETTINGS['timeout']}")
+    print(f"5. Concurrent Workers : {CUSTOM_SCAN_SETTINGS['workers']}")
+    print(f"6. Test Download      : {'Enabled' if CUSTOM_SCAN_SETTINGS['test_download'] else 'Disabled'}")
+    
+    choice = input(Colors.BOLD + "\nDo you want to change these custom settings before scanning? (y/N): " + Colors.END).strip().lower()
+    if choice == 'y':
+        d = input(f"Enter Test Domain [{CUSTOM_SCAN_SETTINGS['domain']}]: ").strip()
+        if d: CUSTOM_SCAN_SETTINGS['domain'] = d
+        p = input(f"Enter Port [{CUSTOM_SCAN_SETTINGS['port']}]: ").strip()
+        if p.isdigit(): CUSTOM_SCAN_SETTINGS['port'] = int(p)
+        t = input(f"Enter Timeout [{CUSTOM_SCAN_SETTINGS['timeout']}]: ").strip()
+        try:
+            if t: CUSTOM_SCAN_SETTINGS['timeout'] = float(t)
+        except ValueError:
+            pass
+        w = input(f"Enter Concurrent Workers [{CUSTOM_SCAN_SETTINGS['workers']}]: ").strip()
+        if w.isdigit(): CUSTOM_SCAN_SETTINGS['workers'] = int(w)
+        print(Colors.GREEN + "[+] Custom settings updated successfully!" + Colors.END)
+
+    ips = select_ip_source()
+    if not ips:
+        print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
+        return
+
+    total_ips = len(ips)
+    working_ips = []
+    completed_count = [0]
+    failed_count = [0]
+
+    print(Colors.BLUE + f"\n[*] Running Custom Scanner on {total_ips} IPs using {CUSTOM_SCAN_SETTINGS['workers']} workers...\n" + Colors.END)
+
+    def worker_task(ip):
+        lat = check_ip_http_latency(
+            ip, port=CUSTOM_SCAN_SETTINGS['port'],
+            domain=CUSTOM_SCAN_SETTINGS['domain'],
+            timeout=CUSTOM_SCAN_SETTINGS['timeout'],
+            test_download=CUSTOM_SCAN_SETTINGS['test_download'],
+            path=CUSTOM_SCAN_SETTINGS['path']
+        )
+        completed_count[0] += 1
+        percent = int((completed_count[0] / total_ips) * 100)
+        status_line = f"[*] Progress: {completed_count[0]}/{total_ips} ({percent}%) | Working: {len(working_ips)} | Failed: {failed_count[0]}"
+        print(Colors.CYAN + f"\r{status_line:<70}" + Colors.END, end="", flush=True)
+
+        if lat is not None:
+            return (ip, lat)
+        else:
+            failed_count[0] += 1
+            return None
+
+    with ThreadPoolExecutor(max_workers=CUSTOM_SCAN_SETTINGS['workers']) as executor:
+        futures = [executor.submit(worker_task, ip) for ip in ips]
+        for future in as_completed(futures):
+            res = future.result()
+            if res:
+                working_ips.append(res)
+
+    print("\n" + "-" * 48)
+    working_ips.sort(key=lambda x: x[1])
+    output = "\n".join([item[0] for item in working_ips])
+    save_to_file(SAVE_FILENAME, output)
+
+    if working_ips:
+        msg = f"Custom Scanner Results (Domain: {CUSTOM_SCAN_SETTINGS['domain']}):\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
+        send_all(msg)
+
+    print(Colors.GREEN + f"\n[SUMMARY] Total: {total_ips} | Working: {len(working_ips)} | Failed: {failed_count[0]}" + Colors.END)
+
+
 def main_menu():
     while True:
         print_banner()
@@ -567,8 +624,8 @@ def main_menu():
  ║  [2] Test IP and PORT with Latency Table                        ║
  ║  [3] Test TCP PORT Only                                         ║
  ║  [4] Combine Config (Auto Send to Telegram & Rubika)            ║
- ║  [5] Mahsa & Shir-Khorshid VPN Special CDN Scanner (NEW!)       ║
- ║  [6] Configure Scan Settings (Workers, Domain, Timeout)         ║
+ ║  [5] Mahsa & Shir-Khorshid VPN Special CDN Scanner              ║
+ ║  [6] Custom Dedicated Scanner & Settings (NEW!)                 ║
  ║  [0] Exit                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """ + Colors.END)
@@ -586,7 +643,7 @@ def main_menu():
         elif choice == "5":
             menu_option_5_mahsa()
         elif choice == "6":
-            configure_scan_settings()
+            menu_option_6_custom_scanner()
         elif choice == "0":
             print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
             sys.exit(0)
