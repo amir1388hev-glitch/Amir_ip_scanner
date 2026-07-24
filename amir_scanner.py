@@ -53,15 +53,6 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-DEFAULT_CUSTOM_SETTINGS = {
-    "domain": "cloudflare.com",
-    "path": "/",
-    "port": 443,
-    "timeout": 3.0,
-    "workers": 20,
-    "test_download": True
-}
-
 PORTS_TO_TEST = [
     443, 8443, 2053, 2083, 2087, 2096,
     80, 8080, 8880, 2052, 2082, 2086, 2095,
@@ -350,7 +341,7 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.1 (IPMyP Integrated)      {Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.2 (IPMyP + Ctrl+C Fix)   {Colors.CYAN} ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -365,12 +356,10 @@ def finalize_and_send(working_results, total_ips, title_msg, is_config=False):
     
     for item in working_results:
         if is_config:
-            # item format: (ip, lat, country, formatted_config_str)
             ip, lat, country, cfg_str = item
             output_lines.append(f"{ip} | {lat}ms | Country: {country} | [WORKING]\n{cfg_str}")
             clean_ips_for_file.append(ip)
         else:
-            # item format: (target_str, lat, country) -> target_str could be ip or ip:port
             target_str, lat, country = item
             output_lines.append(f"{target_str} | {lat}ms | Country: {country} | [WORKING]")
             clean_ips_for_file.append(target_str.split(':')[0])
@@ -421,7 +410,6 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
                     print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
                 return True
         
-        # If dead/failed, just show it on screen as requested ("ایپی ای هم خراب بود هیچ ایرادی نداره نشون بده فقط")
         if is_port_scan:
             ip, p = item
             print(f"{ip}:{p:<22} | {Colors.RED}[DEAD]{Colors.END}")
@@ -470,6 +458,7 @@ def menu_option_2():
     finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table")
 
 def menu_option_3():
+    global stop_scan
     print(Colors.YELLOW + "\n[>] Option 3: Test TCP PORT Only" + Colors.END)
     ips = select_ip_source()
     if not ips: return
@@ -500,7 +489,6 @@ def menu_option_3():
             for f in as_completed(futures):
                 if stop_scan: break
         except KeyboardInterrupt:
-            global stop_scan
             stop_scan = True
             print(Colors.YELLOW + "\n[!] Stopped by user. Saving working results..." + Colors.END)
 
@@ -508,6 +496,7 @@ def menu_option_3():
     finalize_and_send(results, total_combinations, "Open Ports Table")
 
 def menu_option_4():
+    global stop_scan
     print(Colors.YELLOW + "\n[>] Option 4: Combine Config (Auto Send)" + Colors.END)
     raw_config = input(Colors.BOLD + "Config (use YOUR_IP or address for replacement): " + Colors.END).strip()
     if not raw_config: return
@@ -520,7 +509,6 @@ def menu_option_4():
     ips = select_ip_source()
     if not ips: return
     
-    global stop_scan
     stop_scan = False
     working_results = []
     import threading
@@ -594,7 +582,7 @@ def menu_option_5_mahsa():
     finalize_and_send(working_results, total_ips, f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table")
 
 def menu_option_6_custom_scanner():
-    current_custom = DEFAULT_CUSTOM_SETTINGS.copy()
+    current_custom = SCAN_SETTINGS.copy()
     
     print(Colors.YELLOW + "\n[>] Option 6: Custom Dedicated Scanner & Settings" + Colors.END)
     print(Colors.CYAN + "\n=== Custom Scanner Configuration ===" + Colors.END)
