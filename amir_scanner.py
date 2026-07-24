@@ -340,7 +340,6 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers)
         lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
         completed_count[0] += 1
         
-        # این خط دقیقاً روی یک خط ثابت در پایین صفحه رفرش میشه و خط جدید ایجاد نمیکنه
         status_line = f"[*] Progress: {completed_count[0]}/{total_ips} IPs Tested"
         sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
         sys.stdout.flush()
@@ -530,4 +529,83 @@ def menu_option_6_custom_scanner():
     print(f"5. Concurrent Workers : {CUSTOM_SCAN_SETTINGS['workers']}")
     print(f"6. Test Download      : {'Enabled' if CUSTOM_SCAN_SETTINGS['test_download'] else 'Disabled'}")
     
-    choice = input(Colors.BOLD + "\nDo you want to change these custom s
+    choice = input(Colors.BOLD + "\nDo you want to change these custom settings before scanning? (y/N): " + Colors.END).strip().lower()
+    if choice == 'y':
+        d = input(f"Enter Test Domain [{CUSTOM_SCAN_SETTINGS['domain']}]: ").strip()
+        if d: CUSTOM_SCAN_SETTINGS['domain'] = d
+        p = input(f"Enter Port [{CUSTOM_SCAN_SETTINGS['port']}]: ").strip()
+        if p.isdigit(): CUSTOM_SCAN_SETTINGS['port'] = int(p)
+        t = input(f"Enter Timeout [{CUSTOM_SCAN_SETTINGS['timeout']}]: ").strip()
+        try:
+            if t: CUSTOM_SCAN_SETTINGS['timeout'] = float(t)
+        except ValueError:
+            pass
+        w = input(f"Enter Concurrent Workers [{CUSTOM_SCAN_SETTINGS['workers']}]: ").strip()
+        if w.isdigit(): CUSTOM_SCAN_SETTINGS['workers'] = int(w)
+        print(Colors.GREEN + "[+] Custom settings updated successfully!" + Colors.END)
+
+    ips = select_ip_source()
+    if not ips:
+        print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
+        return
+
+    working_ips, total_ips = run_scanner_engine(
+        ips, CUSTOM_SCAN_SETTINGS['port'], CUSTOM_SCAN_SETTINGS['domain'], 
+        CUSTOM_SCAN_SETTINGS['timeout'], CUSTOM_SCAN_SETTINGS['test_download'], 
+        CUSTOM_SCAN_SETTINGS['path'], CUSTOM_SCAN_SETTINGS['workers']
+    )
+
+    for ip, lat in working_ips:
+        print(f"{ip:<18} | {str(lat):<8} | {Colors.GREEN}[WORKING]{Colors.END}")
+
+    output = "\n".join([item[0] for item in working_ips])
+    save_to_file(SAVE_FILENAME, output)
+
+    if working_ips:
+        msg = f"Custom Scanner Results (Domain: {CUSTOM_SCAN_SETTINGS['domain']}):\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
+        send_all(msg)
+
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
+
+
+def main_menu():
+    while True:
+        print_banner()
+        print(Colors.CYAN + """
+ ╔══════════════════════════════════════════════════════════════════╗
+ ║  [1] Test IP Health (Edge Speed & Download Test)               ║
+ ║  [2] Test IP and PORT with Latency Table                        ║
+ ║  [3] Test TCP PORT Only                                         ║
+ ║  [4] Combine Config (Auto Send to Telegram & Rubika)            ║
+ ║  [5] Mahsa & Shir-Khorshid VPN Special CDN Scanner              ║
+ ║  [6] Custom Dedicated Scanner & Settings (NEW!)                 ║
+ ║  [0] Exit                                                       ║
+ ╚══════════════════════════════════════════════════════════════════╝
+""" + Colors.END)
+
+        choice = get_clean_input(Colors.BOLD + "[>] Select option: " + Colors.END)
+
+        if choice == "1":
+            menu_option_1()
+        elif choice == "2":
+            menu_option_2()
+        elif choice == "3":
+            menu_option_3()
+        elif choice == "4":
+            menu_option_4()
+        elif choice == "5":
+            menu_option_5_mahsa()
+        elif choice == "6":
+            menu_option_6_custom_scanner()
+        elif choice == "0":
+            print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
+            sys.exit(0)
+        else:
+            print(Colors.RED + "[!] Invalid option selected." + Colors.END)
+
+        input(Colors.BOLD + "\n[*] Press Enter to continue..." + Colors.END)
+        os.system("clear")
+
+
+if __name__ == "__main__":
+    main_menu()
