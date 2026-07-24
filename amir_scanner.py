@@ -39,7 +39,6 @@ TELEGRAM_BOT_TOKEN = "8851868234:AAFHxnxQ8AnHubsHtx0fNYtZ4mdGdUyXIoI"
 TELEGRAM_CHAT_ID = "-1004437972136"
 
 BALE_BOT_TOKEN = "2690620:Nm1F_42X7P1ZMCg8VMMsQaMKDgDOEbSIvUk"
-# شناسه استخراج شده از لینک عمومی بله
 BALE_CHAT_ID = "5495275998"
 
 TELEGRAM_ID = "@Pod66Mp"
@@ -54,7 +53,6 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-# تنظیمات پیش‌فرض گزینه ۶ (ثابت و غیرقابل تغییر دائم)
 DEFAULT_CUSTOM_SETTINGS = {
     "domain": "cloudflare.com",
     "path": "/",
@@ -81,11 +79,17 @@ stop_scan = False
 
 def get_ip_country(ip):
     try:
-        res = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=2)
+        res = requests.get(f"https://ipmyp.ir/api/ip/{ip}", timeout=3)
         data = res.json()
-        return data.get("country", "Unknown")
+        country = data.get("country") or data.get("country_name") or "Unknown"
+        return country
     except:
-        return "Unknown"
+        try:
+            res = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=2)
+            data = res.json()
+            return data.get("country", "Unknown")
+        except:
+            return "Unknown"
 
 def send_to_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -345,58 +349,99 @@ def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
- ╠══════════════════════════════════════════════════════════════════╣
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.0 (Mahsa & Shir-Khorshid) {Colors.CYAN} ║
+ ╠══════════════════════════════════════════════════════════════════╗
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.1 (IPMyP Integrated)      {Colors.CYAN} ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
 """
     print(banner)
 
-def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, config_template=None):
+def finalize_and_send(working_results, total_ips, title_msg, is_config=False):
+    working_results.sort(key=lambda x: x[1])
+    
+    output_lines = []
+    clean_ips_for_file = []
+    
+    for item in working_results:
+        if is_config:
+            # item format: (ip, lat, country, formatted_config_str)
+            ip, lat, country, cfg_str = item
+            output_lines.append(f"{ip} | {lat}ms | Country: {country} | [WORKING]\n{cfg_str}")
+            clean_ips_for_file.append(ip)
+        else:
+            # item format: (target_str, lat, country) -> target_str could be ip or ip:port
+            target_str, lat, country = item
+            output_lines.append(f"{target_str} | {lat}ms | Country: {country} | [WORKING]")
+            clean_ips_for_file.append(target_str.split(':')[0])
+
+    save_to_file(SAVE_FILENAME, "\n".join(clean_ips_for_file))
+    if working_results:
+        send_all(f"{title_msg}:\n\n" + "\n".join(output_lines))
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
+
+def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
     global stop_scan
     stop_scan = False
-    total_ips = len(ips)
     working_results = []
-    completed_count = [0]
     import threading
     thread_lock = threading.Lock()
 
-    print(Colors.BLUE + f"\n[*] Scanning {total_ips} individual IPs using {workers} parallel workers...\n" + Colors.END)
+    if extra_tasks:
+        tasks = extra_tasks
+    elif is_port_scan:
+        tasks = [(ip, p) for ip in ips for p in PORTS_TO_TEST]
+    else:
+        tasks = ips
 
-    def worker_task(ip):
+    total_tasks = len(tasks)
+    print(Colors.BLUE + f"\n[*] Scanning {total_tasks} items using {workers} parallel workers (Press Ctrl+C to stop & save/send)...\n" + Colors.END)
+
+    def worker_task(item):
         if stop_scan:
             return None
-        lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
         
-        with thread_lock:
-            completed_count[0] += 1
-            percent = int((completed_count[0] / total_ips) * 30) if total_ips > 0 else 30
-            bar = "█" * percent + "-" * (30 - percent)
-            status_line = f"Scanning: {completed_count[0]}/{total_ips} | Found: {len(working_results)} | [{bar}]"
-            sys.stdout.write(Colors.CYAN + f"\r{status_line:<65}" + Colors.END)
-            sys.stdout.flush()
-
+        if is_port_scan:
+            ip, p = item
+            lat = check_ip_http_latency(ip, port=p, domain=domain, timeout=timeout, test_download=test_download, path=path)
             if lat is not None:
                 country = get_ip_country(ip)
-                working_results.append((ip, lat, country))
-                sys.stdout.write(f"\n{Colors.GREEN}[WORKING]{Colors.END} {ip:<15} | {lat:<6.1f}ms | Country: {country}\n")
-                return (ip, lat, country)
+                res_str = f"{ip}:{p}"
+                with thread_lock:
+                    working_results.append((res_str, lat, country))
+                    print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+                return True
+        else:
+            ip = item
+            lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
+            if lat is not None:
+                country = get_ip_country(ip)
+                with thread_lock:
+                    working_results.append((ip, lat, country))
+                    print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+                return True
+        
+        # If dead/failed, just show it on screen as requested ("ایپی ای هم خراب بود هیچ ایرادی نداره نشون بده فقط")
+        if is_port_scan:
+            ip, p = item
+            print(f"{ip}:{p:<22} | {Colors.RED}[DEAD]{Colors.END}")
+        else:
+            ip = item
+            print(f"{ip:<18} | {Colors.RED}[DEAD]{Colors.END}")
         return None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(worker_task, ip) for ip in ips]
         try:
+            futures = [executor.submit(worker_task, item) for item in tasks]
             for future in as_completed(futures):
                 if stop_scan:
                     break
         except KeyboardInterrupt:
             stop_scan = True
-            print(Colors.YELLOW + "\n\n[!] Scan stopped by user (Ctrl+C)." + Colors.END)
+            print(Colors.YELLOW + "\n\n[!] Scan stopped by user (Ctrl+C). Saving and sending working results..." + Colors.END)
 
     print("\n" + "-" * 65)
-    working_results.sort(key=lambda x: x[1])
-    return working_results, total_ips
+    return working_results, total_tasks
 
 def menu_option_1():
     print(Colors.YELLOW + "\n[>] Option 1: Test IP Health (Edge Speed Scanner)" + Colors.END)
@@ -405,68 +450,24 @@ def menu_option_1():
         print(Colors.RED + "[!] No IPs available to test." + Colors.END)
         return
 
-    working_ips, total_ips = run_scanner_engine(
+    working_results, total_ips = run_scanner_engine(
         ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-
-    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
-    print("-" * 60)
-    for ip, lat, country in working_ips:
-        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
-
-    output = "\n".join([f"IP: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in working_ips])
-    save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
-    if working_ips:
-        send_all(f"Clean IPs Table:\n\n{output}")
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
+    finalize_and_send(working_results, total_ips, "Clean IPs Table")
 
 def menu_option_2():
     print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
     ips = select_ip_source()
     if not ips: return
-    tasks_list = [(ip, port) for ip in ips for port in PORTS_TO_TEST]
-    total_combinations = len(tasks_list)
-    completed_count = [0]
-    results = []
-    import threading
-    thread_lock = threading.Lock()
 
-    def worker_task(item):
-        if stop_scan: return None
-        ip, port = item
-        lat = check_ip_http_latency(ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
-        with thread_lock:
-            completed_count[0] += 1
-            status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} Tested"
-            sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
-            sys.stdout.flush()
-            if lat is not None:
-                country = get_ip_country(ip)
-                results.append((f"{ip}:{port}", lat, country))
-                return True
-        return None
-
-    with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
-        try:
-            futures = [executor.submit(worker_task, t) for t in tasks_list]
-            for f in as_completed(futures): pass
-        except KeyboardInterrupt:
-            print(Colors.YELLOW + "\n[!] Stopped by user." + Colors.END)
-
-    print("\n" + "-" * 65)
-    results.sort(key=lambda x: x[1])
-    print(f"\n{'IP:Port':<22} | {'Latency':<10} | {'Country':<15} | Status")
-    print("-" * 65)
-    for item, lat, country in results:
-        print(f"{item:<22} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
-
-    output = "\n".join([f"Target: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in results])
-    save_to_file(SAVE_FILENAME, "\n".join([item[0].split(':')[0] for item in results]))
-    if results: 
-        send_all(f"Healthy IPs & Ports Table:\n\n{output}")
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(results)} | Total: {total_combinations}" + Colors.END)
+    working_results, total_ips = run_scanner_engine(
+        ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
+        SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
+        SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'], is_port_scan=True
+    )
+    finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table")
 
 def menu_option_3():
     print(Colors.YELLOW + "\n[>] Option 3: Test TCP PORT Only" + Colors.END)
@@ -474,42 +475,37 @@ def menu_option_3():
     if not ips: return
     tasks_list = [(ip, port) for ip in ips for port in PORTS_TO_TEST]
     total_combinations = len(tasks_list)
-    completed_count = [0]
     results = []
     import threading
     thread_lock = threading.Lock()
 
+    print(Colors.BLUE + f"\n[*] Testing TCP connection on {total_combinations} combinations (Press Ctrl+C to stop)...\n" + Colors.END)
+
     def worker_task(item):
+        if stop_scan: return
         ip, port = item
         connected = check_ip_port_connection(ip, port, timeout=2.0)
-        with thread_lock:
-            completed_count[0] += 1
-            status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} Tested"
-            sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
-            sys.stdout.flush()
-            if connected:
-                country = get_ip_country(ip)
-                results.append((f"{ip}:{port}", country))
-        return None
+        res_str = f"{ip}:{port}"
+        if connected:
+            country = get_ip_country(ip)
+            with thread_lock:
+                results.append((res_str, 0, country))
+                print(f"{res_str:<22} | Country: {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}")
+        else:
+            print(f"{res_str:<22} | {Colors.RED}[CLOSED]{Colors.END}")
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
             futures = [executor.submit(worker_task, t) for t in tasks_list]
-            for f in as_completed(futures): pass
+            for f in as_completed(futures):
+                if stop_scan: break
         except KeyboardInterrupt:
-            print(Colors.YELLOW + "\n[!] Stopped by user." + Colors.END)
+            global stop_scan
+            stop_scan = True
+            print(Colors.YELLOW + "\n[!] Stopped by user. Saving working results..." + Colors.END)
 
     print("\n" + "-" * 65)
-    print(f"\n{'IP:Port':<22} | {'Country':<15} | Status")
-    print("-" * 50)
-    for item, country in results:
-        print(f"{item:<22} | {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}")
-
-    output = "\n".join([f"Target: {item} | Country: {country}" for item, country in results])
-    save_to_file(SAVE_FILENAME, "\n".join([item.split(':')[0] for item, country in results]))
-    if results: 
-        send_all(f"Open Ports Table:\n\n{output}")
-    print(Colors.GREEN + f"\n[SUMMARY] Open: {len(results)} | Total: {total_combinations}" + Colors.END)
+    finalize_and_send(results, total_combinations, "Open Ports Table")
 
 def menu_option_4():
     print(Colors.YELLOW + "\n[>] Option 4: Combine Config (Auto Send)" + Colors.END)
@@ -524,28 +520,50 @@ def menu_option_4():
     ips = select_ip_source()
     if not ips: return
     
-    working_ips, total_ips = run_scanner_engine(
-        ips, manual_port, SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
-    )
-    
-    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
-    print("-" * 60)
-    for ip, lat, country in working_ips:
-        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+    global stop_scan
+    stop_scan = False
+    working_results = []
+    import threading
+    thread_lock = threading.Lock()
 
-    if working_ips:
-        combined_configs = []
-        for ip, lat, country in working_ips:
+    print(Colors.BLUE + f"\n[*] Scanning {len(ips)} IPs for config combination (Press Ctrl+C to stop)...\n" + Colors.END)
+
+    def worker_task(ip):
+        if stop_scan: return
+        lat = check_ip_http_latency(ip, port=manual_port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
+        if lat is not None:
+            country = get_ip_country(ip)
             new_cfg = raw_config.replace("YOUR_IP", ip).replace("127.0.0.1", ip)
             if ip not in new_cfg and manual_port != 443:
                 new_cfg = f"{new_cfg} (IP: {ip}:{manual_port})"
-            combined_configs.append(f"Config: {new_cfg}\nIP: {ip} | Ping: {lat}ms | Country: {country}")
-        
-        output = "\n\n".join(combined_configs)
-        save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
-        send_all(f"Config Combined Results Table:\n\n{output}")
-        
-    print(Colors.GREEN + f"\n[SUMMARY] Passed: {len(working_ips)} | Total: {total_ips}" + Colors.END)
+            with thread_lock:
+                working_results.append((ip, lat, country, new_cfg))
+                print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+        else:
+            print(f"{ip:<18} | {Colors.RED}[DEAD]{Colors.END}")
+
+    with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
+        try:
+            futures = [executor.submit(worker_task, ip) for ip in ips]
+            for f in as_completed(futures):
+                if stop_scan: break
+        except KeyboardInterrupt:
+            stop_scan = True
+            print(Colors.YELLOW + "\n[!] Stopped by user. Saving and sending..." + Colors.END)
+
+    print("\n" + "-" * 65)
+    working_results.sort(key=lambda x: x[1])
+    
+    output_lines = []
+    clean_ips = []
+    for ip, lat, country, cfg_str in working_results:
+        output_lines.append(f"Config: {cfg_str}\nIP: {ip} | {lat}ms | Country: {country}")
+        clean_ips.append(ip)
+
+    save_to_file(SAVE_FILENAME, "\n".join(clean_ips))
+    if working_results:
+        send_all("Config Combined Results Table:\n\n" + "\n\n".join(output_lines))
+    print(Colors.GREEN + f"\n[SUMMARY] Passed: {len(working_results)} | Total: {len(ips)}" + Colors.END)
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
@@ -568,25 +586,12 @@ def menu_option_5_mahsa():
         print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
         return
 
-    working_ips, total_ips = run_scanner_engine(
+    working_results, total_ips = run_scanner_engine(
         ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-
-    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
-    print("-" * 60)
-    for ip, lat, country in working_ips:
-        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
-
-    output = "\n".join([f"IP: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in working_ips])
-    save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
-
-    if working_ips:
-        msg = f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table:\n\n" + output
-        send_all(msg)
-
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
+    finalize_and_send(working_results, total_ips, f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table")
 
 def menu_option_6_custom_scanner():
     current_custom = DEFAULT_CUSTOM_SETTINGS.copy()
@@ -620,25 +625,12 @@ def menu_option_6_custom_scanner():
         print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
         return
 
-    working_ips, total_ips = run_scanner_engine(
+    working_results, total_ips = run_scanner_engine(
         ips, current_custom['port'], current_custom['domain'], 
         current_custom['timeout'], current_custom['test_download'], 
         current_custom['path'], current_custom['workers']
     )
-
-    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
-    print("-" * 60)
-    for ip, lat, country in working_ips:
-        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
-
-    output = "\n".join([f"IP: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in working_ips])
-    save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
-
-    if working_ips:
-        msg = f"Custom Scanner Results (Domain: {current_custom['domain']}) Table:\n\n" + output
-        send_all(msg)
-
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
+    finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table")
 
 def main_menu():
     while True:
@@ -648,7 +640,7 @@ def main_menu():
  ║  {Colors.GREEN}[1] Test IP Health (Edge Speed & Download Test){Colors.CYAN}               ║
  ║  {Colors.YELLOW}[2] Test IP and PORT with Latency Table{Colors.CYAN}                        ║
  ║  {Colors.MAGENTA}[3] Test TCP PORT Only{Colors.CYAN}                                         ║
- ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika){Colors.CYAN}            ║
+ ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
  ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings (NEW!){Colors.CYAN}                 ║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
