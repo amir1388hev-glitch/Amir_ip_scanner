@@ -11,6 +11,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
+# غیرفعال کردن هشدار SSL
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class Colors:
     GREEN = "\033[92m"
@@ -18,10 +21,10 @@ class Colors:
     YELLOW = "\033[93m"
     BLUE = "\033[94m"
     CYAN = "\033[96m"
+    MAGENTA = "\033[95m"
     WHITE = "\033[97m"
     BOLD = "\033[1m"
     END = "\033[0m"
-
 
 GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips"
 
@@ -35,10 +38,9 @@ RUBIKA_CHAT_ID = "g0ILUMK0562851bf38dfcd7703bdeb22"
 TELEGRAM_BOT_TOKEN = "8851868234:AAFHxnxQ8AnHubsHtx0fNYtZ4mdGdUyXIoI"
 TELEGRAM_CHAT_ID = "-1004437972136"
 
-# ========== توکن و شناسه بله (اصلاح شده) ==========
 BALE_BOT_TOKEN = "2690620:Nm1F_42X7P1ZMCg8VMMsQaMKDgDOEbSIvUk"
+# شناسه استخراج شده از لینک عمومی بله
 BALE_CHAT_ID = "5495275998"
-# ===============================================
 
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
@@ -52,7 +54,8 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-CUSTOM_SCAN_SETTINGS = {
+# تنظیمات پیش‌فرض گزینه ۶ (ثابت و غیرقابل تغییر دائم)
+DEFAULT_CUSTOM_SETTINGS = {
     "domain": "cloudflare.com",
     "path": "/",
     "port": 443,
@@ -74,6 +77,15 @@ MAHSA_CDN_TYPES = {
     "5": "Any CDN (Mixed)"
 }
 
+stop_scan = False
+
+def get_ip_country(ip):
+    try:
+        res = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=2)
+        data = res.json()
+        return data.get("country", "Unknown")
+    except:
+        return "Unknown"
 
 def send_to_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -94,7 +106,6 @@ def send_to_telegram(text):
                 if attempt == 2:
                     print(Colors.RED + "[!] Failed to send to Telegram after 3 attempts." + Colors.END)
 
-
 def send_to_rubika(text):
     if not RUBIKA_BOT_TOKEN or not RUBIKA_CHAT_ID:
         return
@@ -114,8 +125,6 @@ def send_to_rubika(text):
                 if attempt == 2:
                     print(Colors.RED + "[!] Failed to send to Rubika after 3 attempts." + Colors.END)
 
-
-# ========== تابع اصلاح شده برای ارسال به بله ==========
 def send_to_bale(text):
     if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
         return
@@ -125,23 +134,27 @@ def send_to_bale(text):
     print(Colors.BLUE + "[*] Sending results to Bale..." + Colors.END)
     for chunk in chunks:
         payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
+        success = False
         for attempt in range(3):
             try:
                 res = requests.post(url, json=payload, timeout=15)
                 if res.status_code == 200:
                     print(Colors.GREEN + "[+] Successfully sent to Bale!" + Colors.END)
+                    success = True
                     break
             except Exception:
                 if attempt == 2:
-                    print(Colors.RED + "[!] Failed to send to Bale after 3 attempts." + Colors.END)
-# ====================================================
-
+                    pass
+        if success:
+            print(Colors.GREEN + "پیام با موفقیت به بله ارسال شد." + Colors.END)
+        else:
+            print(Colors.RED + "ارسال پیام به بله با خطا مواجه شد و انجام نگرفت." + Colors.END)
 
 def send_all(text):
-    send_to_telegram(text)
-    send_to_rubika(text)
-    send_to_bale(text)
-
+    full_text = f"{text}\n\n🔥 آی‌پی تمیز خدمت شما:\n\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂"
+    send_to_telegram(full_text)
+    send_to_rubika(full_text)
+    send_to_bale(full_text)
 
 def get_clean_input(prompt_text):
     try:
@@ -151,7 +164,6 @@ def get_clean_input(prompt_text):
     except (KeyboardInterrupt, EOFError):
         print(Colors.YELLOW + "\n[*] Exiting..." + Colors.END)
         sys.exit(0)
-
 
 def get_ips_from_github(url):
     try:
@@ -168,7 +180,6 @@ def get_ips_from_github(url):
     except Exception as e:
         print(Colors.RED + f"[!] Error connecting to GitHub: {e}" + Colors.END)
         return []
-
 
 def get_ips_from_local_file():
     print(Colors.BLUE + f"[*] Reading IPs from local file: {LOCAL_ALL_IPS_FILE}" + Colors.END)
@@ -191,7 +202,6 @@ def get_ips_from_local_file():
     else:
         print(Colors.RED + f"[!] File not found: {LOCAL_ALL_IPS_FILE}" + Colors.END)
     return []
-
 
 def parse_ip_input(user_input):
     ips = []
@@ -232,7 +242,6 @@ def parse_ip_input(user_input):
                 pass
     return ips
 
-
 def get_manual_ips():
     print(Colors.CYAN + "\nEnter IPs (single IP, range, CIDR, or multiline paste):" + Colors.END)
     print(Colors.YELLOW + "Paste your IP list below, then press ENTER twice when finished:\n" + Colors.END)
@@ -253,7 +262,6 @@ def get_manual_ips():
     print(Colors.GREEN + f"[+] Expanded to {len(ips)} individual IPs." + Colors.END)
     return ips
 
-
 def select_ip_source():
     print(Colors.CYAN + "\nSelect IP source:" + Colors.END)
     print("1. GitHub (Online repository)")
@@ -272,9 +280,8 @@ def select_ip_source():
         print(Colors.RED + "[!] Invalid choice selected." + Colors.END)
         return []
 
-
 def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_download=True, path="/"):
-    for attempt in range(3):
+    for attempt in range(2):
         start_time = time.time()
         try:
             if port == 80:
@@ -307,13 +314,12 @@ def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_
                 tls_sock.close()
                 return round(latency, 1)
         except Exception:
-            if attempt == 2:
+            if attempt == 1:
                 return None
     return None
 
-
 def check_ip_port_connection(ip, port, timeout=2.0):
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
@@ -322,10 +328,9 @@ def check_ip_port_connection(ip, port, timeout=2.0):
             if result == 0:
                 return True
         except Exception:
-            if attempt == 2:
+            if attempt == 1:
                 return False
     return False
-
 
 def save_to_file(filepath, data):
     try:
@@ -336,57 +341,62 @@ def save_to_file(filepath, data):
     except Exception as e:
         print(Colors.RED + f"\n[!] Save error: {e}" + Colors.END)
 
-
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
  ╔══════════════════════════════════════════════════════════════════╗
- ║                                                                  ║
- ║    █████╗ ███╗   ███╗██╗██████╗     ███████╗ ██████╗██╗███████╗  ║
- ║   ██╔══██╗████╗ ████║██║██╔══██╗    ██╔════╝██╔════╝██║██╔════╝  ║
- ║   ███████║██╔████╔██║██║██████╔╝    ███████╗██║     ██║█████╗    ║
- ║   ██╔══██║██║╚██╔╝██║██║██╔══██╗    ╚╚══██║██║     ██║██╔══╝    ║
- ║   ██║  ██║██║ ╚═╝ ██║██║██║  ██║    ███████║╚██████╗██║███████╗  ║
- ║   ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═╝    ╚══════╝ ╚═════╝╚═╝╚══════╝  ║
- ║                                                                  ║
+ ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╣
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v1.0.3 (Mahsa & Shir-Khorshid) {Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.0 (Mahsa & Shir-Khorshid) {Colors.CYAN} ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
 """
     print(banner)
 
-
-def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers):
+def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, config_template=None):
+    global stop_scan
+    stop_scan = False
     total_ips = len(ips)
     working_results = []
     completed_count = [0]
+    import threading
+    thread_lock = threading.Lock()
 
     print(Colors.BLUE + f"\n[*] Scanning {total_ips} individual IPs using {workers} parallel workers...\n" + Colors.END)
 
     def worker_task(ip):
-        lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
-        completed_count[0] += 1
-        
-        status_line = f"[*] Progress: {completed_count[0]}/{total_ips} IPs Tested"
-        sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
-        sys.stdout.flush()
-
-        if lat is not None:
-            working_results.append((ip, lat))
-            return (ip, lat)
-        else:
+        if stop_scan:
             return None
+        lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
+        
+        with thread_lock:
+            completed_count[0] += 1
+            percent = int((completed_count[0] / total_ips) * 30) if total_ips > 0 else 30
+            bar = "█" * percent + "-" * (30 - percent)
+            status_line = f"Scanning: {completed_count[0]}/{total_ips} | Found: {len(working_results)} | [{bar}]"
+            sys.stdout.write(Colors.CYAN + f"\r{status_line:<65}" + Colors.END)
+            sys.stdout.flush()
+
+            if lat is not None:
+                country = get_ip_country(ip)
+                working_results.append((ip, lat, country))
+                sys.stdout.write(f"\n{Colors.GREEN}[WORKING]{Colors.END} {ip:<15} | {lat:<6.1f}ms | Country: {country}\n")
+                return (ip, lat, country)
+        return None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(worker_task, ip) for ip in ips]
-        for future in as_completed(futures):
-            pass
+        try:
+            for future in as_completed(futures):
+                if stop_scan:
+                    break
+        except KeyboardInterrupt:
+            stop_scan = True
+            print(Colors.YELLOW + "\n\n[!] Scan stopped by user (Ctrl+C)." + Colors.END)
 
     print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
     return working_results, total_ips
-
 
 def menu_option_1():
     print(Colors.YELLOW + "\n[>] Option 1: Test IP Health (Edge Speed Scanner)" + Colors.END)
@@ -401,16 +411,16 @@ def menu_option_1():
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
 
-    for ip, lat in working_ips:
-        print(f"{ip:<18} | {str(lat):<8} | {Colors.GREEN}[WORKING]{Colors.END}")
+    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
+    print("-" * 60)
+    for ip, lat, country in working_ips:
+        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
 
-    output = "\n".join([item[0] for item in working_ips])
-    save_to_file(SAVE_FILENAME, output)
+    output = "\n".join([f"IP: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in working_ips])
+    save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
     if working_ips:
-        msg = f"Clean IPs:\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
-        send_all(msg)
+        send_all(f"Clean IPs Table:\n\n{output}")
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
-
 
 def menu_option_2():
     print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
@@ -420,35 +430,43 @@ def menu_option_2():
     total_combinations = len(tasks_list)
     completed_count = [0]
     results = []
+    import threading
+    thread_lock = threading.Lock()
 
     def worker_task(item):
+        if stop_scan: return None
         ip, port = item
         lat = check_ip_http_latency(ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
-        completed_count[0] += 1
-        status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} IPs Tested"
-        sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
-        sys.stdout.flush()
-        if lat is not None:
-            results.append((f"{ip}:{port}", lat))
-            return (f"{ip}:{port}", lat)
-        else:
-            return None
+        with thread_lock:
+            completed_count[0] += 1
+            status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} Tested"
+            sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
+            sys.stdout.flush()
+            if lat is not None:
+                country = get_ip_country(ip)
+                results.append((f"{ip}:{port}", lat, country))
+                return True
+        return None
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
-        futures = [executor.submit(worker_task, t) for t in tasks_list]
-        for future in as_completed(futures):
-            pass
+        try:
+            futures = [executor.submit(worker_task, t) for t in tasks_list]
+            for f in as_completed(futures): pass
+        except KeyboardInterrupt:
+            print(Colors.YELLOW + "\n[!] Stopped by user." + Colors.END)
 
     print("\n" + "-" * 65)
     results.sort(key=lambda x: x[1])
-    for item, lat in results:
-        print(f"{item:<18} | {str(lat):<8} | {Colors.GREEN}[WORKING]{Colors.END}")
+    print(f"\n{'IP:Port':<22} | {'Latency':<10} | {'Country':<15} | Status")
+    print("-" * 65)
+    for item, lat, country in results:
+        print(f"{item:<22} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
 
-    output = "\n".join([item[0] for item in results])
-    save_to_file(SAVE_FILENAME, output)
-    if results: send_all(f"Healthy IPs:\n\n{output}\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}")
+    output = "\n".join([f"Target: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in results])
+    save_to_file(SAVE_FILENAME, "\n".join([item[0].split(':')[0] for item in results]))
+    if results: 
+        send_all(f"Healthy IPs & Ports Table:\n\n{output}")
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(results)} | Total: {total_combinations}" + Colors.END)
-
 
 def menu_option_3():
     print(Colors.YELLOW + "\n[>] Option 3: Test TCP PORT Only" + Colors.END)
@@ -458,54 +476,76 @@ def menu_option_3():
     total_combinations = len(tasks_list)
     completed_count = [0]
     results = []
+    import threading
+    thread_lock = threading.Lock()
 
     def worker_task(item):
         ip, port = item
         connected = check_ip_port_connection(ip, port, timeout=2.0)
-        completed_count[0] += 1
-        status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} IPs Tested"
-        sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
-        sys.stdout.flush()
-        if connected:
-            results.append(f"{ip}:{port}")
-            return f"{ip}:{port}"
-        else:
-            return None
+        with thread_lock:
+            completed_count[0] += 1
+            status_line = f"[*] Progress: {completed_count[0]}/{total_combinations} Tested"
+            sys.stdout.write(Colors.CYAN + f"\r{status_line:<60}" + Colors.END)
+            sys.stdout.flush()
+            if connected:
+                country = get_ip_country(ip)
+                results.append((f"{ip}:{port}", country))
+        return None
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
-        futures = [executor.submit(worker_task, t) for t in tasks_list]
-        for future in as_completed(futures):
-            pass
+        try:
+            futures = [executor.submit(worker_task, t) for t in tasks_list]
+            for f in as_completed(futures): pass
+        except KeyboardInterrupt:
+            print(Colors.YELLOW + "\n[!] Stopped by user." + Colors.END)
 
     print("\n" + "-" * 65)
-    for item in results:
-        print(f"{item:<18} | {Colors.GREEN}[OPEN]{Colors.END}")
+    print(f"\n{'IP:Port':<22} | {'Country':<15} | Status")
+    print("-" * 50)
+    for item, country in results:
+        print(f"{item:<22} | {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}")
 
-    output = "\n".join(results)
-    save_to_file(SAVE_FILENAME, output)
-    if results: send_all(f"Open Ports:\n\n{output}\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}")
+    output = "\n".join([f"Target: {item} | Country: {country}" for item, country in results])
+    save_to_file(SAVE_FILENAME, "\n".join([item.split(':')[0] for item, country in results]))
+    if results: 
+        send_all(f"Open Ports Table:\n\n{output}")
     print(Colors.GREEN + f"\n[SUMMARY] Open: {len(results)} | Total: {total_combinations}" + Colors.END)
-
 
 def menu_option_4():
     print(Colors.YELLOW + "\n[>] Option 4: Combine Config (Auto Send)" + Colors.END)
-    raw_config = input(Colors.BOLD + "Config: " + Colors.END).strip()
+    raw_config = input(Colors.BOLD + "Config (use YOUR_IP or address for replacement): " + Colors.END).strip()
     if not raw_config: return
+    
+    try:
+        manual_port = int(input(Colors.BOLD + "Enter target Port for config test (e.g. 443): " + Colors.END).strip() or 443)
+    except:
+        manual_port = 443
+
     ips = select_ip_source()
     if not ips: return
     
     working_ips, total_ips = run_scanner_engine(
-        ips, 443, "chatgpt.com", 3.0, True, "/", SCAN_SETTINGS['workers']
+        ips, manual_port, SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
     
-    for ip, lat in working_ips:
-        print(f"{ip:<18} | {str(lat):<8} | {Colors.GREEN}[WORKING]{Colors.END}")
+    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
+    print("-" * 60)
+    for ip, lat, country in working_ips:
+        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
 
     if working_ips:
-        output = "\n".join([f"IP: {item[0]} | Latency: {item[1]}ms" for item in working_ips])
-        send_all(f"Config Combined Results:\n\n{raw_config}\n\n{output}\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}")
+        combined_configs = []
+        for ip, lat, country in working_ips:
+            new_cfg = raw_config.replace("YOUR_IP", ip).replace("127.0.0.1", ip)
+            if ip not in new_cfg and manual_port != 443:
+                new_cfg = f"{new_cfg} (IP: {ip}:{manual_port})"
+            combined_configs.append(f"Config: {new_cfg}\nIP: {ip} | Ping: {lat}ms | Country: {country}")
+        
+        output = "\n\n".join(combined_configs)
+        save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
+        send_all(f"Config Combined Results Table:\n\n{output}")
+        
     print(Colors.GREEN + f"\n[SUMMARY] Passed: {len(working_ips)} | Total: {total_ips}" + Colors.END)
-
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
@@ -534,43 +574,46 @@ def menu_option_5_mahsa():
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
 
-    for ip, lat in working_ips:
-        print(f"{ip:<18} | {str(lat):<8} | {Colors.GREEN}[WORKING]{Colors.END}")
+    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
+    print("-" * 60)
+    for ip, lat, country in working_ips:
+        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
 
-    output = "\n".join([item[0] for item in working_ips])
-    save_to_file(SAVE_FILENAME, output)
+    output = "\n".join([f"IP: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in working_ips])
+    save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
 
     if working_ips:
-        msg = f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}]:\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
+        msg = f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table:\n\n" + output
         send_all(msg)
 
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
 
-
 def menu_option_6_custom_scanner():
+    current_custom = DEFAULT_CUSTOM_SETTINGS.copy()
+    
     print(Colors.YELLOW + "\n[>] Option 6: Custom Dedicated Scanner & Settings" + Colors.END)
     print(Colors.CYAN + "\n=== Custom Scanner Configuration ===" + Colors.END)
-    print(f"1. Test Domain (SNI)  : {CUSTOM_SCAN_SETTINGS['domain']}")
-    print(f"2. Test Path          : {CUSTOM_SCAN_SETTINGS['path']}")
-    print(f"3. Port               : {CUSTOM_SCAN_SETTINGS['port']}")
-    print(f"4. Timeout (s)        : {CUSTOM_SCAN_SETTINGS['timeout']}")
-    print(f"5. Concurrent Workers : {CUSTOM_SCAN_SETTINGS['workers']}")
-    print(f"6. Test Download      : {'Enabled' if CUSTOM_SCAN_SETTINGS['test_download'] else 'Disabled'}")
+    print(f"1. Test Domain (SNI)  : {current_custom['domain']}")
+    print(f"2. Test Path          : {current_custom['path']}")
+    print(f"3. Port               : {current_custom['port']}")
+    print(f"4. Timeout (s)        : {current_custom['timeout']}")
+    print(f"5. Concurrent Workers : {current_custom['workers']}")
+    print(f"6. Test Download      : {'Enabled' if current_custom['test_download'] else 'Disabled'}")
     
     choice = input(Colors.BOLD + "\nDo you want to change these custom settings before scanning? (y/N): " + Colors.END).strip().lower()
     if choice == 'y':
-        d = input(f"Enter Test Domain [{CUSTOM_SCAN_SETTINGS['domain']}]: ").strip()
-        if d: CUSTOM_SCAN_SETTINGS['domain'] = d
-        p = input(f"Enter Port [{CUSTOM_SCAN_SETTINGS['port']}]: ").strip()
-        if p.isdigit(): CUSTOM_SCAN_SETTINGS['port'] = int(p)
-        t = input(f"Enter Timeout [{CUSTOM_SCAN_SETTINGS['timeout']}]: ").strip()
+        d = input(f"Enter Test Domain [{current_custom['domain']}]: ").strip()
+        if d: current_custom['domain'] = d
+        p = input(f"Enter Port [{current_custom['port']}]: ").strip()
+        if p.isdigit(): current_custom['port'] = int(p)
+        t = input(f"Enter Timeout [{current_custom['timeout']}]: ").strip()
         try:
-            if t: CUSTOM_SCAN_SETTINGS['timeout'] = float(t)
+            if t: current_custom['timeout'] = float(t)
         except ValueError:
             pass
-        w = input(f"Enter Concurrent Workers [{CUSTOM_SCAN_SETTINGS['workers']}]: ").strip()
-        if w.isdigit(): CUSTOM_SCAN_SETTINGS['workers'] = int(w)
-        print(Colors.GREEN + "[+] Custom settings updated successfully!" + Colors.END)
+        w = input(f"Enter Concurrent Workers [{current_custom['workers']}]: ").strip()
+        if w.isdigit(): current_custom['workers'] = int(w)
+        print(Colors.GREEN + "[+] Custom settings applied temporarily for this session!" + Colors.END)
 
     ips = select_ip_source()
     if not ips:
@@ -578,38 +621,39 @@ def menu_option_6_custom_scanner():
         return
 
     working_ips, total_ips = run_scanner_engine(
-        ips, CUSTOM_SCAN_SETTINGS['port'], CUSTOM_SCAN_SETTINGS['domain'], 
-        CUSTOM_SCAN_SETTINGS['timeout'], CUSTOM_SCAN_SETTINGS['test_download'], 
-        CUSTOM_SCAN_SETTINGS['path'], CUSTOM_SCAN_SETTINGS['workers']
+        ips, current_custom['port'], current_custom['domain'], 
+        current_custom['timeout'], current_custom['test_download'], 
+        current_custom['path'], current_custom['workers']
     )
 
-    for ip, lat in working_ips:
-        print(f"{ip:<18} | {str(lat):<8} | {Colors.GREEN}[WORKING]{Colors.END}")
+    print(f"\n{'IP Address':<18} | {'Latency':<10} | {'Country':<15} | Status")
+    print("-" * 60)
+    for ip, lat, country in working_ips:
+        print(f"{ip:<18} | {str(lat)+'ms':<10} | {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
 
-    output = "\n".join([item[0] for item in working_ips])
-    save_to_file(SAVE_FILENAME, output)
+    output = "\n".join([f"IP: {item[0]} | Ping: {item[1]}ms | Country: {item[2]}" for item in working_ips])
+    save_to_file(SAVE_FILENAME, "\n".join([item[0] for item in working_ips]))
 
     if working_ips:
-        msg = f"Custom Scanner Results (Domain: {CUSTOM_SCAN_SETTINGS['domain']}):\n\n" + output + f"\n\nID: {TELEGRAM_ID} | {RUBIKA_ID}"
+        msg = f"Custom Scanner Results (Domain: {current_custom['domain']}) Table:\n\n" + output
         send_all(msg)
 
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_ips)} | Total: {total_ips}" + Colors.END)
 
-
 def main_menu():
     while True:
         print_banner()
-        print(Colors.CYAN + """
+        print(f"""{Colors.CYAN}
  ╔══════════════════════════════════════════════════════════════════╗
- ║  [1] Test IP Health (Edge Speed & Download Test)               ║
- ║  [2] Test IP and PORT with Latency Table                        ║
- ║  [3] Test TCP PORT Only                                         ║
- ║  [4] Combine Config (Auto Send to Telegram & Rubika)            ║
- ║  [5] Mahsa & Shir-Khorshid VPN Special CDN Scanner              ║
- ║  [6] Custom Dedicated Scanner & Settings (NEW!)                 ║
- ║  [0] Exit                                                       ║
+ ║  {Colors.GREEN}[1] Test IP Health (Edge Speed & Download Test){Colors.CYAN}               ║
+ ║  {Colors.YELLOW}[2] Test IP and PORT with Latency Table{Colors.CYAN}                        ║
+ ║  {Colors.MAGENTA}[3] Test TCP PORT Only{Colors.CYAN}                                         ║
+ ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika){Colors.CYAN}            ║
+ ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
+ ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings (NEW!){Colors.CYAN}                 ║
+ ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
-""" + Colors.END)
+""")
 
         choice = get_clean_input(Colors.BOLD + "[>] Select option: " + Colors.END)
 
@@ -633,7 +677,6 @@ def main_menu():
 
         input(Colors.BOLD + "\n[*] Press Enter to continue..." + Colors.END)
         os.system("clear")
-
 
 if __name__ == "__main__":
     main_menu()
