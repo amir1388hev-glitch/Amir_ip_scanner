@@ -437,7 +437,7 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.1.0 (Advanced UDP/TCP Scanner){Colors.CYAN}  ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.2.0 (Aether Insights Added){Colors.CYAN}       ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -644,6 +644,44 @@ def menu_option_6_custom_scanner():
     )
     finalize_and_send(working_results, total_ips, "Custom Scanner Results", "Custom_Scanner_Results.txt")
 
+def menu_option_7_aether_insights():
+    print(Colors.CYAN + "\n" + "="*65)
+    print(Colors.BOLD + Colors.GREEN + "       [ AMIR SCANNER PRO - AETHER & TUNNELING INSIGHTS ]" + Colors.END)
+    print(Colors.CYAN + "="*65 + Colors.END)
+    
+    info_text = f"""
+{Colors.YELLOW}► تفاوت اصلی ابزار Aether با اسکنرهای پایتون (AMIR SCANNER PRO):{Colors.END}
+
+1. {Colors.BOLD}اسکنرهای پروژه خودت (پایتون):{Colors.WHITE}
+   - حوزه فعالیت: اسکن و تست زیرساخت (IP & Port Scanning)
+   - کار اصلی: بررسی لیست آی‌پی‌ها، پورت‌ها و دامنه‌ها، سنجش سرعت پاسخگویی (Latency)، 
+     تعیین کشور و در نهایت ارسال آی‌پی‌های سالم به کلاینت‌های دیگر (مثل v2ray، روبیکا یا تلگرام).
+   - ماهیت: اسکریپت شما یک کلاینت پروکسی یا تونل نهایی نیست، بلکه ابزاری برای پیدا کردن 
+     سالم‌ترین آی‌پی‌هاست.{Colors.END}
+
+2. {Colors.BOLD}ابزار Aether (به زبان Rust):{Colors.WHITE}
+   - حوزه فعالیت: کلاینت اتصال و تونلینگ (Client & Tunneling Engine)
+   - کار اصلی: ترافیک دستگاه شما را می‌گیرد، آن را رمزنگاری می‌کند (از طریق پروتکل‌های مدرن 
+     مثل MASQUE/QUIC)، از فیلترینگ عبور داده و یک پورت محلی (SOCKS5) روی گوشی باز می‌کند 
+     تا ترافیک برنامه‌هایتان عملاً از آن عبور کند.{Colors.END}
+
+{Colors.MAGENTA}-----------------------------------------------------------------{Colors.END}
+{Colors.YELLOW}► خلاصه به زبان ساده:{Colors.WHITE}
+ * {Colors.GREEN}اسکنر شما:{Colors.WHITE} کارآگاهی است که بهترین و سالم‌ترین مسیرها و آی‌پی‌ها را پیدا کرده و تحویل می‌دهد.
+ * {Colors.CYAN}ابزار Aether:{Colors.WHITE} ماشینی است که خودش سوار مسیرها می‌شود و شما را مستقیم جابه‌جا می‌کند و به اینترنت آزاد می‌رساند.
+{Colors.MAGENTA}-----------------------------------------------------------------{Colors.END}
+
+{Colors.YELLOW}► ایده‌های خفن برای ارتقای پروژه AMIR SCANNER PRO به سبک Aether:{Colors.WHITE}
+ 1. {Colors.BOLD}سیستم اسکن مرحله‌ای و هوشمند (Turbo / Ironclad):{Colors.WHITE}
+    پورت‌ها اول با سرعت بالا پینگ شوند، سپس روی آی‌پی‌های زنده تست دانلود واقعی 
+    یا ارسال درخواست HTTP/3 یا TLS زده شود تا از سلامت کامل مطمئن شویم.
+ 2. {Colors.BOLD}اعتبارسنجی واقعی ترافیک (End-to-End Validation):{Colors.WHITE}
+    انجام یک هندشیک (Handshake) کامل TLS با دامنه مورد نظر (با SNIهای مختلف) 
+    به جای اکتفا کردن صرف به باز بودن پورت یا پاسخ 200 OK.
+"""
+    print(info_text)
+    print(Colors.CYAN + "="*65 + Colors.END)
+
 def menu_option_8_udp_tcp():
     global stop_scan
     print(Colors.YELLOW + "\n[>] Option 8: Advanced UDP & TCP Protocol Connectivity Scanner" + Colors.END)
@@ -714,7 +752,8 @@ def main_menu():
  ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
  ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                         ║
- ║  {Colors.GREEN}[8] Advanced UDP & TCP Protocol Connectivity Scanner (NEW!){Colors.CYAN}       ║
+ ║  {Colors.MAGENTA}[7] Aether & Tunneling Insights Guide{Colors.CYAN}                           ║
+ ║  {Colors.GREEN}[8] Advanced UDP & TCP Protocol Connectivity Scanner{Colors.CYAN}          ║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
@@ -733,6 +772,8 @@ def main_menu():
             menu_option_5_mahsa()
         elif choice == "6":
             menu_option_6_custom_scanner()
+        elif choice == "7":
+            menu_option_7_aether_insights()
         elif choice == "8":
             menu_option_8_udp_tcp()
         elif choice == "0":
