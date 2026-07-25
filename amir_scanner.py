@@ -341,32 +341,65 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.2 (IPMyP + Ctrl+C Fix)   {Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.4 (Multi-Table Country) {Colors.CYAN} ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
 """
     print(banner)
 
-def finalize_and_send(working_results, total_ips, title_msg, is_config=False):
-    working_results.sort(key=lambda x: x[1])
-    
-    output_lines = []
-    clean_ips_for_file = []
-    
+def build_separated_tables_message(working_results, title_msg, is_config=False):
+    country_groups = {}
     for item in working_results:
         if is_config:
             ip, lat, country, cfg_str = item
-            output_lines.append(f"{ip} | {lat}ms | Country: {country} | [WORKING]\n{cfg_str}")
+            key_val = cfg_str
+        else:
+            target_str, lat, country = item
+            key_val = target_str
+
+        if country not in country_groups:
+            country_groups[country] = []
+        country_groups[country].append(key_val)
+
+    message_blocks = [f"📊 {title_msg}\n"]
+    
+    for country, items in country_groups.items():
+        # ساخت جدول یا کادر مجزا برای هر کشور
+        table_border = "┌───────────────────────────────┐"
+        table_footer = "└───────────────────────────────┘"
+        
+        block_lines = [
+            table_border,
+            f"🏴 کشور: {country} ({len(items)} عدد)",
+            "├───────────────────────────────┤"
+        ]
+        for val in items:
+            block_lines.append(f" {val}")
+        block_lines.append(table_footer)
+        
+        message_blocks.append("\n".join(block_lines))
+
+    return "\n\n".join(message_blocks)
+
+def finalize_and_send(working_results, total_ips, title_msg, is_config=False):
+    working_results.sort(key=lambda x: x[1])
+    
+    clean_ips_for_file = []
+    for item in working_results:
+        if is_config:
+            ip, lat, country, cfg_str = item
             clean_ips_for_file.append(ip)
         else:
             target_str, lat, country = item
-            output_lines.append(f"{target_str} | {lat}ms | Country: {country} | [WORKING]")
             clean_ips_for_file.append(target_str.split(':')[0])
 
     save_to_file(SAVE_FILENAME, "\n".join(clean_ips_for_file))
+    
     if working_results:
-        send_all(f"{title_msg}:\n\n" + "\n".join(output_lines))
+        separated_text = build_separated_tables_message(working_results, title_msg, is_config)
+        send_all(separated_text)
+        
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
 
 def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
@@ -542,16 +575,7 @@ def menu_option_4():
     print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
     
-    output_lines = []
-    clean_ips = []
-    for ip, lat, country, cfg_str in working_results:
-        output_lines.append(f"Config: {cfg_str}\nIP: {ip} | {lat}ms | Country: {country}")
-        clean_ips.append(ip)
-
-    save_to_file(SAVE_FILENAME, "\n".join(clean_ips))
-    if working_results:
-        send_all("Config Combined Results Table:\n\n" + "\n\n".join(output_lines))
-    print(Colors.GREEN + f"\n[SUMMARY] Passed: {len(working_results)} | Total: {len(ips)}" + Colors.END)
+    finalize_and_send(working_results, len(ips), "Config Combined Results Table", is_config=True)
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
