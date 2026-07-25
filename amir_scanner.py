@@ -30,7 +30,7 @@ class Colors:
     BOLD = "\033[1m"
     END = "\033[0m"
 
-# ==================== مسیرها و تنظیمات ====================
+# ==================== Paths & Settings ====================
 GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips"
 DOWNLOAD_DIR = "/sdcard/Download"
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
@@ -39,7 +39,7 @@ HTML_REPORT_FILE = os.path.join(DOWNLOAD_DIR, "scan_report.html")
 CSV_REPORT_FILE = os.path.join(DOWNLOAD_DIR, "scan_report.csv")
 CONFIG_FILE = os.path.expanduser("~/.cf_credentials.json")
 
-# ==================== تنظیمات ربات‌ها ====================
+# ==================== Bot Settings ====================
 RUBIKA_BOT_TOKEN = "CABGDG0AGFFRWJKSBWBUBRUGGFMYNFITBVVDKTSVBNOKZWANYOITFQILZSSLCRKT"
 RUBIKA_CHAT_ID = "g0ILUMK0562851bf38dfcd7703bdeb22"
 TELEGRAM_BOT_TOKEN = "8851868234:AAFHxnxQ8AnHubsHtx0fNYtZ4mdGdUyXIoI"
@@ -128,7 +128,7 @@ export default {
 };
 """
 
-# ==================== سیستم ارسال پیام‌رسان‌ها ====================
+# ==================== Messenger Notification System ====================
 def send_to_telegram(text, file_path=None):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -159,7 +159,7 @@ def send_notifications_all(text, file_path=None):
     send_to_rubika(text, file_path)
     send_to_bale(text, file_path)
 
-# ==================== توابع کمکی و شبکه ====================
+# ==================== Helper & Network Functions ====================
 def get_ip_country(ip):
     try:
         res = requests.get(f"https://ipmyp.ir/api/ip/{ip}", timeout=3)
@@ -240,16 +240,16 @@ def get_ips_from_local_file():
     return []
 
 def select_ip_source():
-    print(Colors.CYAN + "\nانتخاب منبع آی‌پی:" + Colors.END)
-    print("1. ریپازیتوری آنلاین گیت‌هاب")
-    print("2. ورودی دستی (تک، CIDR یا رنج)")
-    print("3. فایل محلی (all_ips.txt)")
-    choice = get_clean_input(Colors.BOLD + "[>] گزینه‌ را انتخاب کنید (1/2/3): " + Colors.END)
+    print(Colors.CYAN + "\nSelect IP Source:" + Colors.END)
+    print("1. GitHub Repository")
+    print("2. Manual Input (Single, CIDR, Range)")
+    print("3. Local File (all_ips.txt)")
+    choice = get_clean_input(Colors.BOLD + "[>] Select option (1/2/3): " + Colors.END)
     if choice == "1":
         return get_ips_from_github(GITHUB_IP_URL)
     elif choice == "2":
         lines = []
-        print(Colors.CYAN + "آی‌پی‌ها را وارد کرده و در انتها دو بار Enter بزنید:" + Colors.END)
+        print(Colors.CYAN + "Enter IPs and press Enter twice when done:" + Colors.END)
         while True:
             l = input().strip()
             if not l:
@@ -260,7 +260,7 @@ def select_ip_source():
         return get_ips_from_local_file()
     return []
 
-# ==================== موتور اسکن و تست سرعت دانلود ====================
+# ==================== Scanner Engine & Download Test ====================
 def test_real_download_speed(ip, port, domain):
     try:
         start = time.time()
@@ -332,7 +332,6 @@ def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_
     return None, 0.0
 
 def export_reports(results, port):
-    # ذخیره‌سازی فایل متنی اصلی
     try:
         with open(TEST_RESULT_FILE, "w", encoding="utf-8") as f:
             for item in results:
@@ -340,7 +339,6 @@ def export_reports(results, port):
     except Exception:
         pass
 
-    # ذخیره‌سازی CSV
     try:
         with open(CSV_REPORT_FILE, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -350,16 +348,15 @@ def export_reports(results, port):
     except Exception:
         pass
 
-    # ذخیره‌سازی HTML
     try:
         html_content = f"""<html><head><title>AMIR Scan Report</title>
-        <style>body{{font-family:Tahoma;background:#1e1e1e;color:#fff;padding:20px;}}
+        <style>body{{font-family:sans-serif;background:#1e1e1e;color:#fff;padding:20px;}}
         table{{width:100%;border-collapse:collapse;margin-top:20px;}}
         th,td{{border:1px solid #444;padding:10px;text-align:center;}}
         th{{background:#333;color:#00ffcc;}} tr:nth-child(even){{background:#2a2a2a;}}</style>
-        </head><body><h2>نتایج اسکن آی‌پی کلودفلر</h2>
-        <p>تاريخ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        <table><tr><th>آی‌پی</th><th>پورت</th><th>تأخیر (ms)</th><th>سرعت (Mbps)</th><th>کشور</th></tr>"""
+        </head><body><h2>Cloudflare IP Scan Results</h2>
+        <p>Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        <table><tr><th>IP</th><th>Port</th><th>Latency (ms)</th><th>Speed (Mbps)</th><th>Country</th></tr>"""
         for item in results:
             html_content += f"<tr><td>{item[0]}</td><td>{port}</td><td>{item[1]}</td><td>{item[2]}</td><td>{item[3]}</td></tr>"
         html_content += "</table></body></html>"
@@ -375,7 +372,7 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers)
     import threading
     thread_lock = threading.Lock()
 
-    print(Colors.BLUE + f"\n[*] در حال اسکن {len(ips)} آی‌پی روی پورت {port}..." + Colors.END)
+    print(Colors.BLUE + f"\n[*] Scanning {len(ips)} IPs on port {port}..." + Colors.END)
 
     def worker_task(ip):
         if stop_scan:
@@ -402,19 +399,20 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers)
 
     export_reports(working_results, port)
 
+    # پیام ارسال شده به پیام‌رسان‌ها (فارسی)
     if working_results:
         msg = f"🚀 اسکن جدید تکمیل شد\nتعداد آی‌پی سالم: {len(working_results)}\nبهترین تأخیر: {working_results[0][1]}ms"
         send_notifications_all(msg, TEST_RESULT_FILE)
 
     return working_results, len(ips)
 
-# ==================== مدیریت ورکر و D1 کلودفلر ====================
+# ==================== Banner & CF Credentials ====================
 def print_banner():
     print(f"""{Colors.CYAN}{Colors.BOLD}
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╣
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.8.0 (Full 800-Line Core Edition){Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.8.0 (Full Core Edition){Colors.CYAN}           ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -426,7 +424,7 @@ def get_cf_credentials():
             with open(CONFIG_FILE, "r") as f:
                 data = json.load(f)
                 if data.get("account_id") and data.get("api_token"):
-                    use_saved = input(Colors.BOLD + "👉 استفاده از کلیدهای ذخیره‌شده کلودفلر؟ (Y/n): " + Colors.END).strip().lower()
+                    use_saved = input(Colors.BOLD + "👉 Use saved Cloudflare credentials? (Y/n): " + Colors.END).strip().lower()
                     if use_saved != 'n':
                         return data["account_id"], data["api_token"]
         except Exception:
@@ -489,7 +487,7 @@ def sync_clean_ips_to_d1(account_id, api_token, db_id, clean_results):
             headers=headers,
             json={"sql": "INSERT OR REPLACE INTO clean_ips VALUES (?, ?);", "params": [ip_port, lat_val]}
         )
-    print(Colors.GREEN + f"  [✓] تعداد {len(clean_results)} آی‌پی به دیتابیس کلودفلر منتقل شد." + Colors.END)
+    print(Colors.GREEN + f"  [✓] Successfully synced {len(clean_results)} IPs to D1 database." + Colors.END)
 
 def load_clean_ips_from_file():
     clean_ips = []
@@ -502,44 +500,44 @@ def load_clean_ips_from_file():
                         continue
                     ip_part = line.split()[0]
                     clean_ips.append(ip_part)
-            print(Colors.GREEN + f"  [✓] تعداد {len(clean_ips)} آی‌پی از 'تست_سلامت_ایپی.txt' فراخوانی شد." + Colors.END)
+            print(Colors.GREEN + f"  [✓] Loaded {len(clean_ips)} clean IPs from 'تست_سلامت_ایپی.txt'." + Colors.END)
         except Exception as e:
-            print(Colors.RED + f"  [!] خطا در خواندن فایل: {e}" + Colors.END)
+            print(Colors.RED + f"  [!] Error reading file: {e}" + Colors.END)
     else:
-        print(Colors.YELLOW + "  [!] فایل 'تست_سلامت_ایپی.txt' در پوشه Download یافت نشد!" + Colors.END)
+        print(Colors.YELLOW + "  [!] File 'تست_سلامت_ایپی.txt' not found in Download directory!" + Colors.END)
     return clean_ips
 
-# ==================== منوها و زیرمنوها ====================
+# ==================== Menus & Handlers ====================
 def menu_option_1():
     ips = select_ip_source()
     if not ips: return
     results, total = run_scanner_engine(ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'])
-    print(Colors.GREEN + f"\n[✓] اسکن تکمیل شد ({len(results)} آی‌پی سالم)." + Colors.END)
+    print(Colors.GREEN + f"\n[✓] Scan finished ({len(results)} clean IPs saved)." + Colors.END)
 
 def menu_option_2():
     ips = select_ip_source()
     if not ips: return
-    p = input(Colors.BOLD + "پورت TLS را وارد کنید (مثلاً 8443): " + Colors.END).strip()
+    p = input(Colors.BOLD + "Enter TLS Port (e.g. 8443): " + Colors.END).strip()
     port = int(p) if p.isdigit() else 8443
     run_scanner_engine(ips, port, SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'])
 
 def menu_option_3():
     ips = select_ip_source()
     if not ips: return
-    p = input(Colors.BOLD + "پورت HTTP را وارد کنید (مثلاً 80): " + Colors.END).strip()
+    p = input(Colors.BOLD + "Enter HTTP Port (e.g. 80): " + Colors.END).strip()
     port = int(p) if p.isdigit() else 80
     run_scanner_engine(ips, port, SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'])
 
 def menu_option_settings():
-    print(Colors.CYAN + "\n--- تنظیمات پیشرفته اسکنر ---" + Colors.END)
-    d = input(f"دامنه اصلی ({SCAN_SETTINGS['domain']}): ").strip()
+    print(Colors.CYAN + "\n--- Advanced Settings ---" + Colors.END)
+    d = input(f"Target Domain ({SCAN_SETTINGS['domain']}): ").strip()
     if d: SCAN_SETTINGS['domain'] = d
-    w = input(f"تعداد پردازش‌های همزمان/Thread ({SCAN_SETTINGS['workers']}): ").strip()
+    w = input(f"Workers / Threads ({SCAN_SETTINGS['workers']}): ").strip()
     if w.isdigit(): SCAN_SETTINGS['workers'] = int(w)
-    t = input(f"تایم‌اوت اتصالات ({SCAN_SETTINGS['timeout']}): ").strip()
+    t = input(f"Timeout ({SCAN_SETTINGS['timeout']}): ").strip()
     try: SCAN_SETTINGS['timeout'] = float(t)
     except Exception: pass
-    dl = input(f"تست واقعی سرعت دانلود انجام شود؟ (y/n) [{SCAN_SETTINGS['test_download']}]: ").strip().lower()
+    dl = input(f"Test Download Speed? (y/n) [{SCAN_SETTINGS['test_download']}]: ").strip().lower()
     if dl in ['y', 'n']: SCAN_SETTINGS['test_download'] = (dl == 'y')
 
 def menu_manage_d1_users():
@@ -557,27 +555,27 @@ def menu_manage_d1_users():
                 break
     
     if not db_id:
-        print(Colors.RED + "❌ دیتابیس D1 پیدا نشد!" + Colors.END)
+        print(Colors.RED + "❌ D1 Database not found!" + Colors.END)
         return
 
-    print(Colors.CYAN + "\n--- مدیریت کاربران در D1 ---" + Colors.END)
-    print("1. لیست کاربران")
-    print("2. حذف کاربر")
-    opt = get_clean_input("[>] انتخاب کنید: ")
+    print(Colors.CYAN + "\n--- D1 User Management ---" + Colors.END)
+    print("1. List Users")
+    print("2. Delete User")
+    opt = get_clean_input("[>] Select option: ")
     
     if opt == "1":
         query_res = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": "SELECT username, config_count, created_at FROM users;"})
         if query_res.status_code == 200:
             rows = query_res.json()["result"][0]["results"]
-            print(Colors.YELLOW + f"\n{'نام کاربر':<15} | {'تعداد کانفیگ':<12} | {'تاریخ ساخت':<20}" + Colors.END)
+            print(Colors.YELLOW + f"\n{'Username':<15} | {'Configs':<10} | {'Created At':<20}" + Colors.END)
             print("-" * 50)
             for r in rows:
-                print(f"{r.get('username',''):<15} | {r.get('config_count',0):<12} | {r.get('created_at',''):<20}")
+                print(f"{r.get('username',''):<15} | {r.get('config_count',0):<10} | {r.get('created_at',''):<20}")
     elif opt == "2":
-        u_del = input("نام کاربر جهت حذف: ").strip()
+        u_del = input("Username to delete: ").strip()
         if u_del:
             requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": "DELETE FROM users WHERE username = ?;", "params": [u_del]})
-            print(Colors.GREEN + f"کاربر {u_del} با موفقیت حذف شد." + Colors.END)
+            print(Colors.GREEN + f"User '{u_del}' deleted successfully." + Colors.END)
 
 def menu_option_7_subscription_builder():
     global LAST_CLEAN_IPS
@@ -591,7 +589,7 @@ def menu_option_7_subscription_builder():
         clean_ips = load_clean_ips_from_file()
 
     if not clean_ips:
-        print(Colors.RED + "\n❌ هیچ آی‌پی سالمی یافت نشد!" + Colors.END)
+        print(Colors.RED + "\n❌ No clean IPs found!" + Colors.END)
         return
 
     account_id, api_token = get_cf_credentials()
@@ -613,18 +611,18 @@ def menu_option_7_subscription_builder():
         if create_res.status_code == 200:
             db_id = create_res.json()["result"]["uuid"]
 
-    print(Colors.BLUE + "\n[*] همگام‌سازی آی‌پی‌ها با دیتابیس D1..." + Colors.END)
+    print(Colors.BLUE + "\n[*] Syncing IPs with D1 Database..." + Colors.END)
     sync_clean_ips_to_d1(account_id, api_token, db_id, [(ip, 100) for ip in clean_ips])
 
     worker_url = deploy_worker_automatically(account_id, api_token, db_id)
     if not worker_url:
-        print(Colors.RED + "❌ خطا در انتشار ورکر!" + Colors.END)
+        print(Colors.RED + "❌ Worker Deployment Failed!" + Colors.END)
         return
 
-    username = input(Colors.BOLD + "\n👤 نام کاربری جدید: " + Colors.END).strip()
+    username = input(Colors.BOLD + "\n👤 Enter New Username: " + Colors.END).strip()
     if not username: return
 
-    cfg_count_in = input(Colors.BOLD + "🔢 تعداد کانفیگ (پیش‌فرض ۳۰): " + Colors.END).strip()
+    cfg_count_in = input(Colors.BOLD + "🔢 Config Count (default 30): " + Colors.END).strip()
     config_count = int(cfg_count_in) if cfg_count_in.isdigit() else 30
 
     user_uuid = str(uuid.uuid4())
@@ -643,7 +641,9 @@ def menu_option_7_subscription_builder():
     )
 
     worker_sub_url = f"{worker_url}/sub/{username}"
-    print(Colors.GREEN + f"\n[✓] لینک ساب‌سکرپشن اختصاصی:\n{worker_sub_url}" + Colors.END)
+    print(Colors.GREEN + f"\n[✓] Subscription Link Created:\n{worker_sub_url}" + Colors.END)
+
+    # پیام ارسال شده به پیام‌رسان‌ها (فارسی)
     send_notifications_all(f"🚀 ساب‌سکرپشن جدید ساخته شد:\n{worker_sub_url}\nکاربر: {username}")
 
 def main_menu():
@@ -651,16 +651,16 @@ def main_menu():
         print_banner()
         print(f"""{Colors.CYAN}
  ╔══════════════════════════════════════════════════════════════════╗
- ║  {Colors.GREEN}[1] اسکن استاندارد آی‌پی‌های تمیز کلودفلر (443){Colors.CYAN}                 ║
- ║  {Colors.GREEN}[2] اسکن سفارشی پورت‌های TLS (8443, 2053, ...){Colors.CYAN}                ║
- ║  {Colors.GREEN}[3] اسکن سفارشی پورت‌های HTTP (80, 8080, ...){Colors.CYAN}                 ║
- ║  {Colors.GREEN}[4] تنظیمات پیشرفته (سرعت دانلود، تایم‌اوت، Thread){Colors.CYAN}           ║
- ║  {Colors.GREEN}[5] مدیریت کاربران D1 کلودفلر{Colors.CYAN}                               ║
- ║  {Colors.GREEN}[7] ساخت لینک ساب‌سکرپشن (با خوانش فایل تست_سلامت_ایپی){Colors.CYAN}        ║
- ║  {Colors.END}{Colors.CYAN}[0] خروج{Colors.CYAN}                                                       ║
+ ║  {Colors.GREEN}[1] Standard Cloudflare IP Scan (Port 443){Colors.CYAN}              ║
+ ║  {Colors.GREEN}[2] Custom TLS Ports Scan (8443, 2053, ...){Colors.CYAN}                 ║
+ ║  {Colors.GREEN}[3] Custom Non-TLS Ports Scan (80, 8080, ...){Colors.CYAN}             ║
+ ║  {Colors.GREEN}[4] Advanced Settings (Domain, Speed Test, Timeout){Colors.CYAN}    ║
+ ║  {Colors.GREEN}[5] Manage D1 Users{Colors.CYAN}                                        ║
+ ║  {Colors.GREEN}[7] Build Subscription (Auto Read تست_سلامت_ایپی.txt){Colors.CYAN}     ║
+ ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                         ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
-        choice = get_clean_input(Colors.BOLD + "[>] انتخاب کنید: " + Colors.END)
+        choice = get_clean_input(Colors.BOLD + "[>] Select Option: " + Colors.END)
         if choice == "1": menu_option_1()
         elif choice == "2": menu_option_2()
         elif choice == "3": menu_option_3()
@@ -668,7 +668,7 @@ def main_menu():
         elif choice == "5": menu_manage_d1_users()
         elif choice == "7": menu_option_7_subscription_builder()
         elif choice == "0": sys.exit(0)
-        input(Colors.BOLD + "\n[*] برای ادامه Enter بزنید..." + Colors.END)
+        input(Colors.BOLD + "\n[*] Press Enter to continue..." + Colors.END)
         os.system("clear")
 
 if __name__ == "__main__":
