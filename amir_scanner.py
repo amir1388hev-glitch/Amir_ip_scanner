@@ -422,7 +422,7 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.7 (Custom Features Added) {Colors.CYAN}   ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.5 (7-Gate Hard Scan) {Colors.CYAN}    ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -704,57 +704,6 @@ def menu_option_6_custom_scanner():
     )
     finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table", "Custom_Scanner_Results.txt")
 
-def menu_option_7_features():
-    print(f"""{Colors.CYAN}{Colors.BOLD}
- ╔══════════════════════════════════════════════════════════════════╗
- ║           Fixed IPs & Free WireGuard Generator                   ║
- ╚══════════════════════════════════════════════════════════════════╝
-{Colors.END}""")
-    print("1. Fixed IPs (US, CA, JP, KR, TH, VN, RU, PT, RO, GD)")
-    print("2. Free & Unlimited WireGuard (For Gaming & Low Ping)")
-    
-    choice = get_clean_input(Colors.BOLD + "[>] Select feature (1/2): " + Colors.END)
-    
-    if choice == "1":
-        print(Colors.GREEN + "\n[+] Generating Fixed IP configs for countries..." + Colors.END)
-        countries = ["United States (US)", "Canada (CA)", "Japan (JP)", "South Korea (KR)", "Thailand (TH)", "Vietnam (VN)", "Russia (RU)", "Portugal (PT)", "Romania (RO)", "Grenada (GD)"]
-        output_lines = []
-        for c in countries:
-            output_lines.append(f"# Country Fixed IP: {c}")
-            output_lines.append(f"vless://fixed-ip-uuid@{c.lower().replace(' ', '-')}.amirspeed.workers.dev:443?encryption=none&security=tls&sni=chatgpt.com&type=ws&path=%2F#{c.replace(' ', '_')}")
-        
-        result_text = "\n".join(output_lines)
-        save_to_file("Fixed_IPs.txt", result_text)
-        
-        msg_payload = f"📊 Fixed IPs Results\n\n{result_text}\n\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂"
-        send_to_telegram(msg_payload)
-        send_to_rubika(msg_payload)
-        send_to_bale(msg_payload)
-        
-        print(Colors.GREEN + "[✓] Fixed IP configurations generated, saved, and sent to messengers!" + Colors.END)
-        
-    elif choice == "2":
-        print(Colors.GREEN + "\n[+] Generating Free & Unlimited WireGuard configs for Gamers..." + Colors.END)
-        wg_data = """[Interface]
-PrivateKey = <Client-Private-Key-Placeholder>
-Address = 10.0.0.2/32
-DNS = 1.1.1.1
-
-[Peer]
-PublicKey = <Server-Public-Key-Placeholder>
-Endpoint = 104.18.7.1:51820
-AllowedIPs = 0.0.0.0/0
-PersistentKeepalive = 25
-"""
-        save_to_file("WireGuard.conf", wg_data)
-        
-        msg_payload = f"📊 Free WireGuard Config\n\n{wg_data}\n\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂"
-        send_to_telegram(msg_payload)
-        send_to_rubika(msg_payload)
-        send_to_bale(msg_payload)
-        
-        print(Colors.GREEN + "[✓] WireGuard config file generated, saved, and sent to messengers!" + Colors.END)
-
 def main_menu():
     while True:
         print_banner()
@@ -766,7 +715,6 @@ def main_menu():
  ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
  ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings (NEW!){Colors.CYAN}                 ║
- ║  {Colors.YELLOW}[7] Fixed IPs & Free WireGuard Generator{Colors.CYAN}                     ║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
@@ -785,8 +733,6 @@ def main_menu():
             menu_option_5_mahsa()
         elif choice == "6":
             menu_option_6_custom_scanner()
-        elif choice == "7":
-            menu_option_7_features()
         elif choice == "0":
             print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
             sys.exit(0)
