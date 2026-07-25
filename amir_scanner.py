@@ -26,7 +26,7 @@ class Colors:
     BOLD = "\033[1m"
     END = "\033[0m"
 
-GITHUB_IP_URL = "[https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips](https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips)"
+GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips"
 
 DOWNLOAD_DIR = "/sdcard/Download"
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
@@ -69,13 +69,13 @@ stop_scan = False
 COUNTRY_CACHE = {}
 
 def get_ip_country(ip):
-    # کش کردن کشور بر اساس زیرشبکه /24 برای کاهش درخواست‌ها و جلوگیری از مسدود شدن
+    # کش کردن کشور بر اساس زیرشبکه /24 برای کاهش درخواست‌ها و جلوگیری از مسدود شدن API
     ip_prefix = ".".join(ip.split(".")[:3])
     if ip_prefix in COUNTRY_CACHE:
         return COUNTRY_CACHE[ip_prefix]
 
     try:
-        res = requests.get(f"[http://ip-api.com/json/](http://ip-api.com/json/){ip}?fields=country", timeout=3)
+        res = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=3)
         if res.status_code == 200:
             country = res.json().get("country", "Unknown")
             if country and country != "Unknown":
@@ -85,7 +85,7 @@ def get_ip_country(ip):
         pass
 
     try:
-        res = requests.get(f"[https://ipmyp.ir/api/ip/](https://ipmyp.ir/api/ip/){ip}", timeout=3)
+        res = requests.get(f"https://ipmyp.ir/api/ip/{ip}", timeout=3)
         data = res.json()
         country = data.get("country") or data.get("country_name") or "Unknown"
         if country != "Unknown":
@@ -97,7 +97,7 @@ def get_ip_country(ip):
     return "Unknown"
 
 def split_message_smart(text, max_length=3500):
-    """تقسیم هوشمند پیام بر اساس خطوط جهت جلوگیری از شکستن آی‌پی‌ها"""
+    """تقسیم هوشمند پیام بر اساس خطوط کامل جهت جلوگیری از شکسته شدن آدرس‌های آی‌پی"""
     lines = text.split("\n")
     chunks = []
     current_chunk = []
@@ -120,14 +120,13 @@ def split_message_smart(text, max_length=3500):
 def send_to_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     chunks = split_message_smart(text, max_length=3800)
     print(Colors.BLUE + "[*] Sending results to Telegram..." + Colors.END)
     for chunk in chunks:
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
             "text": chunk,
-            "parse_mode": "Markdown",
             "disable_web_page_preview": True
         }
         for attempt in range(3):
@@ -136,14 +135,16 @@ def send_to_telegram(text):
                 if res.status_code == 200:
                     print(Colors.GREEN + "[+] Successfully sent to Telegram!" + Colors.END)
                     break
-            except Exception:
+                else:
+                    print(Colors.RED + f"[!] Telegram Error Code: {res.status_code}" + Colors.END)
+            except Exception as e:
                 if attempt == 2:
-                    print(Colors.RED + "[!] Failed to send to Telegram after 3 attempts." + Colors.END)
+                    print(Colors.RED + f"[!] Failed to send to Telegram: {e}" + Colors.END)
 
 def send_to_rubika(text):
     if not RUBIKA_BOT_TOKEN or not RUBIKA_CHAT_ID:
         return
-    url = f"[https://botapi.rubika.ir/v01/](https://botapi.rubika.ir/v01/){RUBIKA_BOT_TOKEN}/sendMessage"
+    url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
     chunks = split_message_smart(text, max_length=3200)
     print(Colors.BLUE + "[*] Sending results to Rubika..." + Colors.END)
     for chunk in chunks:
@@ -154,31 +155,31 @@ def send_to_rubika(text):
                 if res.status_code == 200:
                     print(Colors.GREEN + "[+] Successfully sent to Rubika!" + Colors.END)
                     break
-            except Exception:
+                else:
+                    print(Colors.RED + f"[!] Rubika Error Code: {res.status_code}" + Colors.END)
+            except Exception as e:
                 if attempt == 2:
-                    print(Colors.RED + "[!] Failed to send to Rubika after 3 attempts." + Colors.END)
+                    print(Colors.RED + f"[!] Failed to send to Rubika: {e}" + Colors.END)
 
 def send_to_bale(text):
     if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
         return
-    url = f"[https://tapi.bale.ai/bot](https://tapi.bale.ai/bot){BALE_BOT_TOKEN}/sendMessage"
+    url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
     chunks = split_message_smart(text, max_length=3800)
     print(Colors.BLUE + "[*] Sending results to Bale..." + Colors.END)
     for chunk in chunks:
         payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
-        success = False
         for attempt in range(3):
             try:
                 res = requests.post(url, json=payload, timeout=15)
                 if res.status_code == 200:
                     print(Colors.GREEN + "[+] Successfully sent to Bale!" + Colors.END)
-                    success = True
                     break
-            except Exception:
+                else:
+                    print(Colors.RED + f"[!] Bale Error Code: {res.status_code}" + Colors.END)
+            except Exception as e:
                 if attempt == 2:
-                    pass
-        if not success:
-            print(Colors.RED + "[!] Failed to send to Bale after 3 attempts." + Colors.END)
+                    print(Colors.RED + f"[!] Failed to send to Bale: {e}" + Colors.END)
 
 def send_results_by_country(working_results, title_msg, is_config=False):
     if not working_results:
@@ -203,23 +204,19 @@ def send_results_by_country(working_results, title_msg, is_config=False):
         lines = []
         lines.append(f"📊 {title_msg}\n")
         
-        # قرار دادن لیست آی‌پی‌ها داخل بلوک کد برای جلوگیری از به‌هم‌ریختگی ظاهری
-        lines.append("```")
         for val in items:
             lines.append(val)
-        lines.append("```\n")
         
-        # اطلاعات کشور و سازنده در انتهای پیام
-        lines.append(f"🏴 کشور: {country} | تعداد: {len(items)} عدد\n")
-        lines.append(f"🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂")
+        lines.append(f"\n🏴 کشور: {country} | تعداد: {len(items)} عدد")
+        lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂")
 
         single_message = "\n".join(lines)
 
-        print(Colors.BLUE + f"\n[*] Sending {len(items)} items for [{country}]..." + Colors.END)
+        print(Colors.BLUE + f"\n[*] Sending {len(items)} items for country [{country}]..." + Colors.END)
         send_to_telegram(single_message)
         send_to_rubika(single_message)
         send_to_bale(single_message)
-        time.sleep(1.5)
+        time.sleep(1)
 
 def get_clean_input(prompt_text):
     try:
