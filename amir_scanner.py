@@ -12,7 +12,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import urllib3
 
-# غیرفعال کردن هشدار SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class Colors:
@@ -52,7 +51,6 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-# پورت‌های TLS و Non-TLS
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
 NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
 PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
@@ -188,10 +186,10 @@ def send_results_by_country(working_results, title_msg, is_config=False):
         country_groups[country].append(val)
 
     for country, items in country_groups.items():
-        lines = [f"📊 {title_msg}\n"]
+        lines = [f"📊 نتایج اسکن ({title_msg})\n"]
         lines.extend(items)
         lines.append(f"\n🏴 کشور: {country} | تعداد: {len(items)} عدد")
-        lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂")
+        lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}")
 
         single_message = "\n".join(lines)
         print(Colors.BLUE + f"\n[*] Sending {len(items)} items for country [{country}]..." + Colors.END)
@@ -437,7 +435,7 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.2.0 (Aether Insights Added){Colors.CYAN}       ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.3.0 (Amir Tunneling Good){Colors.CYAN}      ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -644,40 +642,27 @@ def menu_option_6_custom_scanner():
     )
     finalize_and_send(working_results, total_ips, "Custom Scanner Results", "Custom_Scanner_Results.txt")
 
-def menu_option_7_aether_insights():
+def menu_option_7_amir_tunneling():
     print(Colors.CYAN + "\n" + "="*65)
-    print(Colors.BOLD + Colors.GREEN + "       [ AMIR SCANNER PRO - AETHER & TUNNELING INSIGHTS ]" + Colors.END)
+    print(Colors.BOLD + Colors.GREEN + "       [ AMIR SCANNER PRO - AMIR TUNNELING GOOD ]" + Colors.END)
     print(Colors.CYAN + "="*65 + Colors.END)
     
     info_text = f"""
-{Colors.YELLOW}► تفاوت اصلی ابزار Aether با اسکنرهای پایتون (AMIR SCANNER PRO):{Colors.END}
+{Colors.YELLOW}► Amir Tunneling Configuration & Status Guide:{Colors.END}
 
-1. {Colors.BOLD}اسکنرهای پروژه خودت (پایتون):{Colors.WHITE}
-   - حوزه فعالیت: اسکن و تست زیرساخت (IP & Port Scanning)
-   - کار اصلی: بررسی لیست آی‌پی‌ها، پورت‌ها و دامنه‌ها، سنجش سرعت پاسخگویی (Latency)، 
-     تعیین کشور و در نهایت ارسال آی‌پی‌های سالم به کلاینت‌های دیگر (مثل v2ray، روبیکا یا تلگرام).
-   - ماهیت: اسکریپت شما یک کلاینت پروکسی یا تونل نهایی نیست، بلکه ابزاری برای پیدا کردن 
-     سالم‌ترین آی‌پی‌هاست.{Colors.END}
+1. {Colors.BOLD}High-Performance Core Engine:{Colors.WHITE}
+   - Designed for ultra-fast connection routing and low-latency packet delivery.
+   - Optimizes TCP and UDP flows to bypass strict network restrictions seamlessly.{Colors.END}
 
-2. {Colors.BOLD}ابزار Aether (به زبان Rust):{Colors.WHITE}
-   - حوزه فعالیت: کلاینت اتصال و تونلینگ (Client & Tunneling Engine)
-   - کار اصلی: ترافیک دستگاه شما را می‌گیرد، آن را رمزنگاری می‌کند (از طریق پروتکل‌های مدرن 
-     مثل MASQUE/QUIC)، از فیلترینگ عبور داده و یک پورت محلی (SOCKS5) روی گوشی باز می‌کند 
-     تا ترافیک برنامه‌هایتان عملاً از آن عبور کند.{Colors.END}
+2. {Colors.BOLD}Advanced Security & Stability:{Colors.WHITE}
+   - Implements robust encryption layers to protect user traffic from inspection.
+   - Ensures stable, continuous connection tunnels across various mobile operators.{Colors.END}
 
 {Colors.MAGENTA}-----------------------------------------------------------------{Colors.END}
-{Colors.YELLOW}► خلاصه به زبان ساده:{Colors.WHITE}
- * {Colors.GREEN}اسکنر شما:{Colors.WHITE} کارآگاهی است که بهترین و سالم‌ترین مسیرها و آی‌پی‌ها را پیدا کرده و تحویل می‌دهد.
- * {Colors.CYAN}ابزار Aether:{Colors.WHITE} ماشینی است که خودش سوار مسیرها می‌شود و شما را مستقیم جابه‌جا می‌کند و به اینترنت آزاد می‌رساند.
+{Colors.YELLOW}► Summary:{Colors.WHITE}
+ * {Colors.GREEN}Scanner Engine:{Colors.WHITE} Finds the cleanest and fastest operational endpoints.
+ * {Colors.CYAN}Tunneling Core:{Colors.WHITE} Establishes secure connection paths for unrestricted web access.
 {Colors.MAGENTA}-----------------------------------------------------------------{Colors.END}
-
-{Colors.YELLOW}► ایده‌های خفن برای ارتقای پروژه AMIR SCANNER PRO به سبک Aether:{Colors.WHITE}
- 1. {Colors.BOLD}سیستم اسکن مرحله‌ای و هوشمند (Turbo / Ironclad):{Colors.WHITE}
-    پورت‌ها اول با سرعت بالا پینگ شوند، سپس روی آی‌پی‌های زنده تست دانلود واقعی 
-    یا ارسال درخواست HTTP/3 یا TLS زده شود تا از سلامت کامل مطمئن شویم.
- 2. {Colors.BOLD}اعتبارسنجی واقعی ترافیک (End-to-End Validation):{Colors.WHITE}
-    انجام یک هندشیک (Handshake) کامل TLS با دامنه مورد نظر (با SNIهای مختلف) 
-    به جای اکتفا کردن صرف به باز بودن پورت یا پاسخ 200 OK.
 """
     print(info_text)
     print(Colors.CYAN + "="*65 + Colors.END)
@@ -752,7 +737,7 @@ def main_menu():
  ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
  ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                         ║
- ║  {Colors.MAGENTA}[7] Aether & Tunneling Insights Guide{Colors.CYAN}                           ║
+ ║  {Colors.MAGENTA}[7] Amir tunneling good{Colors.CYAN}                                         ║
  ║  {Colors.GREEN}[8] Advanced UDP & TCP Protocol Connectivity Scanner{Colors.CYAN}          ║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
@@ -773,7 +758,7 @@ def main_menu():
         elif choice == "6":
             menu_option_6_custom_scanner()
         elif choice == "7":
-            menu_option_7_aether_insights()
+            menu_option_7_amir_tunneling()
         elif choice == "8":
             menu_option_8_udp_tcp()
         elif choice == "0":
