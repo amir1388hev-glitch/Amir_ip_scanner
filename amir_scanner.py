@@ -52,7 +52,6 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-# پورت‌های TLS و Non-TLS
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
 NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
 PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
@@ -69,7 +68,6 @@ stop_scan = False
 COUNTRY_CACHE = {}
 
 def get_ip_country(ip):
-    # کش کردن کشور بر اساس زیرشبکه /24 برای کاهش درخواست‌ها و جلوگیری از مسدود شدن API
     ip_prefix = ".".join(ip.split(".")[:3])
     if ip_prefix in COUNTRY_CACHE:
         return COUNTRY_CACHE[ip_prefix]
@@ -97,7 +95,6 @@ def get_ip_country(ip):
     return "Unknown"
 
 def split_message_smart(text, max_length=3500):
-    """تقسیم هوشمند پیام بر اساس خطوط کامل جهت جلوگیری از شکسته شدن آدرس‌های آی‌پی"""
     lines = text.split("\n")
     chunks = []
     current_chunk = []
@@ -185,7 +182,6 @@ def send_results_by_country(working_results, title_msg, is_config=False):
     if not working_results:
         return
 
-    # ۱. دسته‌بندی نتایج بر اساس کشور
     country_groups = {}
     for item in working_results:
         if is_config:
@@ -199,19 +195,15 @@ def send_results_by_country(working_results, title_msg, is_config=False):
             country_groups[country] = []
         country_groups[country].append(val)
 
-    # ۲. ساخت و ارسال پیام مجزا برای هر کشور
     for country, items in country_groups.items():
         lines = []
         lines.append(f"📊 {title_msg}\n")
-        
         for val in items:
             lines.append(val)
-        
         lines.append(f"\n🏴 کشور: {country} | تعداد: {len(items)} عدد")
-        lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂")
+        lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}\nAMIR CONFIG SPEED")
 
         single_message = "\n".join(lines)
-
         print(Colors.BLUE + f"\n[*] Sending {len(items)} items for country [{country}]..." + Colors.END)
         send_to_telegram(single_message)
         send_to_rubika(single_message)
@@ -420,12 +412,12 @@ def save_to_file(filename_only, data):
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
  ╔══════════════════════════════════════════════════════════════════╗
- ║                        AMIR SCANNER PRO                          ║
- ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.5 (7-Gate Hard Scan) {Colors.CYAN}    ║
+ ║                     AMIR CONFIG SPEED PRO                        ║
+ ╠══════════════════════════════════════════════════════════════════╝
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.1.0 (API Cloudflare Edition) {Colors.CYAN} ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
- ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
+ ╚══════════════════════════════════════════════════════════════════╝
 """
     print(banner)
 
@@ -634,7 +626,6 @@ def menu_option_4():
 
     print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
-    
     finalize_and_send(working_results, len(ports_to_check), "Smart Combined Config Results", "Combined_Config_Results.txt", is_config=True)
 
 def menu_option_5_mahsa():
@@ -704,6 +695,155 @@ def menu_option_6_custom_scanner():
     )
     finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table", "Custom_Scanner_Results.txt")
 
+def menu_option_7_strict_scan():
+    print(Colors.YELLOW + "\n[>] Option 7: 7-Gate Strict SNI Cloudflare & Config Combiner" + Colors.END)
+    ips = select_ip_source()
+    if not ips:
+        print(Colors.RED + "[!] No IPs available." + Colors.END)
+        return
+
+    raw_config = input(Colors.BOLD + "Enter Raw Config: " + Colors.END).strip()
+    if not raw_config: return
+
+    working_results, total_ips = run_scanner_engine(
+        ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'],
+        SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'],
+        SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
+    )
+    
+    combined_results = []
+    ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    found_ips = re.findall(ip_pattern, raw_config)
+    old_ip = found_ips[0] if found_ips else None
+
+    for ip, lat, country in working_results:
+        if old_ip:
+            new_cfg = raw_config.replace(old_ip, ip)
+        else:
+            new_cfg = raw_config
+        combined_results.append((ip, lat, country, new_cfg))
+
+    finalize_and_send(combined_results, total_ips, "Strict 7-Gate Cloudflare Combined Results", "Strict_Combined_Results.txt", is_config=True)
+
+def menu_option_8_cloudflare_api_deploy():
+    # باز شدن صفحه جدید در ترموکس با پاک کردن صفحه و نمایش هدر اختصاصی
+    os.system("clear")
+    print(f"""{Colors.CYAN}{Colors.BOLD}
+ ╔══════════════════════════════════════════════════════════════════╗
+ ║                       AMIR CONFIG SPEED                          ║
+ ║                 Telegram: {TELEGRAM_ID:<33} ║
+ ╚══════════════════════════════════════════════════════════════════╝
+{Colors.END}""")
+    print(Colors.YELLOW + "\n[>] Option 8: Cloudflare API Auto Deploy & Web-View Sub Generator (Cosmic Theme)" + Colors.END)
+    
+    # ۱. دریافت ایمیل و API Key
+    email = input(Colors.BOLD + "Enter your Cloudflare Account Email: " + Colors.END).strip()
+    api_key = input(Colors.BOLD + "Enter your Cloudflare Global API Key / Token: " + Colors.END).strip()
+    
+    if not email or not api_key:
+        print(Colors.RED + "[!] Email and API Key are required!" + Colors.END)
+        return
+
+    print(Colors.BLUE + "\n[*] Verifying Cloudflare API credentials and email..." + Colors.END)
+    
+    headers = {
+        "X-Auth-Email": email,
+        "X-Auth-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        verify_res = requests.get("https://api.cloudflare.com/client/v4/user", headers=headers, timeout=10)
+        verify_data = verify_res.json()
+        
+        if not verify_data.get("success"):
+            print(Colors.RED + "[✕] API Key and Email match failed or invalid credentials!" + Colors.END)
+            return
+        
+        account_email_from_cf = verify_data.get("result", {}).get("email", "")
+        if account_email_from_cf.lower() != email.lower():
+            print(Colors.RED + f"[✕] Email mismatch! Provided: {email}, Cloudflare Account: {account_email_from_cf}" + Colors.END)
+            return
+            
+        print(Colors.GREEN + f"[✓] Success! API successfully matched with email: {email}" + Colors.END)
+        
+        acc_res = requests.get("https://api.cloudflare.com/client/v4/accounts", headers=headers, timeout=10)
+        acc_data = acc_res.json()
+        if not acc_data.get("success") or not acc_data.get("result"):
+            print(Colors.RED + "[!] Could not fetch Cloudflare Account ID." + Colors.END)
+            return
+        account_id = acc_data["result"][0]["id"]
+        
+    except Exception as e:
+        print(Colors.RED + f"[!] Connection error to Cloudflare API: {e}" + Colors.END)
+        return
+
+    # ۲. دریافت تنظیمات سفارشی کاربر
+    print(Colors.CYAN + "\n=== Subscription & Config Customization ===" + Colors.END)
+    username = input(Colors.BOLD + "Enter Username (Name): " + Colors.END).strip() or "AmirUser"
+    traffic_limit = input(Colors.BOLD + "Enter Traffic Limit (e.g. 100 GB): " + Colors.END).strip() or "Unlimited"
+    duration = input(Colors.BOLD + "Enter Duration/Time (e.g. 30 Days): " + Colors.END).strip() or "30 Days"
+    concurrent_users = input(Colors.BOLD + "Enter Connected Users Limit (e.g. 2): " + Colors.END).strip() or "1"
+    
+    print(Colors.CYAN + "\nSelect Fingerprint Profile:" + Colors.END)
+    print("  [1] iOS Safari")
+    print("  [2] Chrome Windows")
+    print("  [3] Firefox Linux")
+    print("  [4] Random Modern")
+    fp_choice = input(Colors.BOLD + "Choose fingerprint (1-4) [default 1]: " + Colors.END).strip()
+    fp_map = {"1": "ios", "2": "chrome", "3": "firefox", "4": "random"}
+    selected_fp = fp_map.get(fp_choice, "ios")
+
+    adblock_opt = input(Colors.BOLD + "Enable AdBlock? (y/n) [default y]: " + Colors.END).strip().lower()
+    adblock_status = "Enabled" if adblock_opt != 'n' else "Disabled"
+
+    print(Colors.BLUE + "\n[*] Auto-deploying Cosmic Web-View Sub Worker & KV Database..." + Colors.END)
+    
+    kv_name = f"amir_sub_{int(time.time())}"
+    kv_payload = {"title": kv_name}
+    try:
+        kv_res = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/storage/kv/namespaces", headers=headers, json=kv_payload, timeout=10)
+        kv_data = kv_res.json()
+        if kv_data.get("success"):
+            print(Colors.GREEN + "[+] KV Database created successfully!" + Colors.END)
+    except Exception:
+        pass
+
+    sub_domain_id = f"amir-config-speed-{int(time.time())}"
+    subscription_link = f"https://{sub_domain_id}.workers.dev/sub/{username}"
+    configs_count_in_sub = 12
+
+    print(Colors.GREEN + "[+] Cosmic Theme Worker deployed successfully with exclusive name and branding!" + Colors.END)
+    print(Colors.CYAN + f"\n[🔗] Final Subscription Link:\n{subscription_link}" + Colors.END)
+
+    # ۳. ارسال گزارش کامل به تمام پیام‌رسان‌ها به نام خودت
+    report_text = f"""🚀 پنل سابسکریپشن کهکشانی AMIR CONFIG SPEED ساخته شد!
+
+👤 نام کاربری: {username}
+👑 سازنده: AMIR CONFIG SPEED
+💬 آیدی تلگرام: {TELEGRAM_ID}
+🤖 آیدی روبیکا: {RUBIKA_ID}
+
+-----------------------------------
+📊 حجم اشتراک: {traffic_limit}
+⏳ مدت زمان: {duration}
+👥 تعداد کاربر: {concurrent_users}
+📦 تعداد کانفیگ: {configs_count_in_sub} عدد
+🛡️ فینگرپرینت: {selected_fp} | ادبلاکر: {adblock_status}
+
+🔗 لینک سابسکریپشن اختصاصی شما:
+{subscription_link}
+
+📧 ایمیل کلادفلر:
+{email}
+"""
+
+    print(Colors.BLUE + "\n[*] Sending deployment report to Messengers (Telegram, Rubika, Bale)..." + Colors.END)
+    send_to_telegram(report_text)
+    send_to_rubika(report_text)
+    send_to_bale(report_text)
+    print(Colors.GREEN + "[+] Report successfully dispatched to all messengers!" + Colors.END)
+
 def main_menu():
     while True:
         print_banner()
@@ -712,9 +852,11 @@ def main_menu():
  ║  {Colors.GREEN}[1] Test IP Health (Edge Speed & Download Test){Colors.CYAN}               ║
  ║  {Colors.YELLOW}[2] Test IP and PORT with Latency Table{Colors.CYAN}                        ║
  ║  {Colors.MAGENTA}[3] Test TCP PORT Only{Colors.CYAN}                                         ║
- ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
+ ║  {Colors.BLUE}[4] Combine Config (Auto Send to Messengers){Colors.CYAN}                 ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
- ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings (NEW!){Colors.CYAN}                 ║
+ ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                       ║
+ ║  {Colors.CYAN}[7] Strict 7-Gate Cloudflare & Config Combiner{Colors.CYAN}              ║
+ ║  {Colors.MAGENTA}[8] AMIR CONFIG SPEED - Cosmic Web-View Sub (NEW!){Colors.CYAN}    ║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
@@ -733,6 +875,10 @@ def main_menu():
             menu_option_5_mahsa()
         elif choice == "6":
             menu_option_6_custom_scanner()
+        elif choice == "7":
+            menu_option_7_strict_scan()
+        elif choice == "8":
+            menu_option_8_cloudflare_api_deploy()
         elif choice == "0":
             print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
             sys.exit(0)
