@@ -8,6 +8,9 @@ import socket
 import ssl
 import sys
 import time
+import json
+import uuid
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
@@ -30,6 +33,7 @@ GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/
 
 DOWNLOAD_DIR = "/sdcard/Download"
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
+CONFIG_FILE = os.path.expanduser("~/.cf_credentials.json")
 
 RUBIKA_BOT_TOKEN = "CABGDG0AGFFRWJKSBWBUBRUGGFMYNFITBVVDKTSVBNOKZWANYOITFQILZSSLCRKT"
 RUBIKA_CHAT_ID = "g0ILUMK0562851bf38dfcd7703bdeb22"
@@ -52,7 +56,7 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-# پورت‌های استخراج شده از تصویر BPB (TLS + Non-TLS)
+# پورت‌های TLS و Non-TLS
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
 NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
 PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
@@ -274,53 +278,35 @@ def select_ip_source():
         print(Colors.RED + "[!] Invalid choice selected." + Colors.END)
         return []
 
-# سیستم اسکن ۷ خان رستم (سخت‌گیرانه و فوق‌العاده مطمئن)
 def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_download=True, path="/"):
-    for attempt in range(2): # خان هفتم: تکرار دوبار برای اطمینان از عدم قطع و وصلی
+    for attempt in range(2):
         start_time = time.time()
         try:
-            # خان اول: ایجاد سوکت اولیه
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
-            
-            # خان دوم: تست Handshake اولیه TCP
             sock.connect((ip, port))
             
             if port in NON_TLS_PORTS:
-                # خان چهارم (برای پورت غیر TLS): ارسال دیتا
                 request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
                 sock.sendall(request_data.encode())
-                
-                # خان پنجم: تایید دریافت بایت پاسخ
                 response = sock.recv(1024)
                 sock.close()
-                if not response:
-                    continue
+                if not response: continue
             else:
-                # خان سوم: تست Handshake SSL/TLS
                 context = ssl.create_default_context()
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
-
                 tls_sock = context.wrap_socket(sock, server_hostname=domain)
-                
-                # خان چهارم (برای TLS): ارسال دیتا
                 request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
                 tls_sock.sendall(request_data.encode())
-                
-                # خان پنجم: تایید دریافت پاسخ
                 response = tls_sock.recv(1024)
                 tls_sock.close()
-                if not response:
-                    continue
+                if not response: continue
 
-            # خان ششم: محاسبه پینگ نهایی
             latency = (time.time() - start_time) * 1000
             return round(latency, 1)
-
         except Exception:
-            if attempt == 1:
-                return None
+            if attempt == 1: return None
     return None
 
 def check_ip_port_connection(ip, port, timeout=2.0):
@@ -330,11 +316,9 @@ def check_ip_port_connection(ip, port, timeout=2.0):
             sock.settimeout(timeout)
             result = sock.connect_ex((ip, port))
             sock.close()
-            if result == 0:
-                return True
+            if result == 0: return True
         except Exception:
-            if attempt == 1:
-                return False
+            if attempt == 1: return False
     return False
 
 def save_to_file(filename_only, data):
@@ -343,13 +327,11 @@ def save_to_file(filename_only, data):
         os.path.expanduser(f"~/storage/downloads/{filename_only}"),
         os.path.expanduser(f"~/{filename_only}")
     ]
-    
     saved = False
     for filepath in possible_paths:
         try:
             folder = os.path.dirname(filepath)
-            if folder:
-                os.makedirs(folder, exist_ok=True)
+            if folder: os.makedirs(folder, exist_ok=True)
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(data)
             print(Colors.GREEN + f"\n[+] Saved to: {filepath}" + Colors.END)
@@ -357,7 +339,6 @@ def save_to_file(filename_only, data):
             break
         except Exception:
             continue
-
     if not saved:
         print(Colors.RED + "\n[!] Save error: Could not write file. Run 'termux-setup-storage' in Termux." + Colors.END)
 
@@ -388,27 +369,22 @@ def build_separated_tables_message(working_results, title_msg, is_config=False):
         country_groups[country].append(key_val)
 
     message_blocks = [f"📊 {title_msg}\n"]
-    
     for country, items in country_groups.items():
         table_border = "┌───────────────────────────────┐"
         table_footer = "└───────────────────────────────┘"
-        
         block_lines = [
             table_border,
             f"🏴 کشور: {country} ({len(items)} عدد)",
             "├───────────────────────────────┤"
         ]
-        for val in items:
-            block_lines.append(f" {val}")
+        for val in items: block_lines.append(f" {val}")
         block_lines.append(table_footer)
-        
         message_blocks.append("\n".join(block_lines))
 
     return "\n\n".join(message_blocks)
 
 def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
-    
     clean_ips_for_file = []
     for item in working_results:
         if is_config:
@@ -419,11 +395,9 @@ def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_c
             clean_ips_for_file.append(target_str)
 
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
-    
     if working_results:
         separated_text = build_separated_tables_message(working_results, title_msg, is_config)
         send_all(separated_text)
-        
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
 
 def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
@@ -433,20 +407,12 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
     import threading
     thread_lock = threading.Lock()
 
-    if extra_tasks:
-        tasks = extra_tasks
-    elif is_port_scan:
-        tasks = [(ip, p) for ip in ips for p in PORTS_TO_TEST]
-    else:
-        tasks = ips
-
+    tasks = extra_tasks if extra_tasks else ([(ip, p) for ip in ips for p in PORTS_TO_TEST] if is_port_scan else ips)
     total_tasks = len(tasks)
-    print(Colors.BLUE + f"\n[*] Scanning {total_tasks} items using {workers} parallel workers (Press Ctrl+C to stop & save/send)...\n" + Colors.END)
+    print(Colors.BLUE + f"\n[*] Scanning {total_tasks} items using {workers} parallel workers...\n" + Colors.END)
 
     def worker_task(item):
-        if stop_scan:
-            return None
-        
+        if stop_scan: return None
         if is_port_scan:
             ip, p = item
             lat = check_ip_http_latency(ip, port=p, domain=domain, timeout=timeout, test_download=test_download, path=path)
@@ -466,35 +432,204 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
                     working_results.append((ip, lat, country))
                     print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
                 return True
-        
-        if is_port_scan:
-            ip, p = item
-            print(f"{ip}:{p:<22} | {Colors.RED}[DEAD]{Colors.END}")
-        else:
-            ip = item
-            print(f"{ip:<18} | {Colors.RED}[DEAD]{Colors.END}")
         return None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
             futures = [executor.submit(worker_task, item) for item in tasks]
             for future in as_completed(futures):
-                if stop_scan:
-                    break
+                if stop_scan: break
         except KeyboardInterrupt:
             stop_scan = True
-            print(Colors.YELLOW + "\n\n[!] Scan stopped by user (Ctrl+C). Saving and sending working results..." + Colors.END)
+            print(Colors.YELLOW + "\n[!] Scan stopped by user." + Colors.END)
 
     print("\n" + "-" * 65)
     return working_results, total_tasks
 
+# ==========================================
+# 🚀 AMIR CONFIG SPEED - (گزینه ۷)
+# ==========================================
+def print_option_7_header():
+    os.system("clear")
+    print(f"""{Colors.CYAN}{Colors.BOLD}
+ ╔══════════════════════════════════════════════════════════════════════════════════╗
+ ║                                                                                  ║
+ ║                          AMIR CONFIG SPEED                                       ║
+ ║                                                                                  ║
+ ║               ⚡ High-Speed Cloudflare Subscription Engine ⚡                    ║
+ ║                                                                                  ║
+ ╚══════════════════════════════════════════════════════════════════════════════════╝{Colors.END}
+""")
+
+def get_cf_credentials():
+    acc_id, token = "", ""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                acc_id = data.get("account_id", "")
+                token = data.get("api_token", "")
+        except: pass
+
+    if acc_id and token:
+        print(Colors.GREEN + "  [✓] اطلاعات ذخیره‌شده کلودفلر یافت شد." + Colors.END)
+        use_saved = input(Colors.BOLD + "  👉 آیا از همین اطلاعات استفاده می‌کنید؟ (Y/n): " + Colors.END).strip().lower()
+        if use_saved != 'n':
+            return acc_id, token
+
+    print(Colors.YELLOW + "\n  🔑 لطفاً کلیدهای اختصاصی کلودفلر خود را وارد کنید:\n" + Colors.END)
+    acc_id = input(Colors.BOLD + "  1. Account ID: " + Colors.END).strip()
+    token = input(Colors.BOLD + "  2. API Token : " + Colors.END).strip()
+
+    if not acc_id or not token:
+        print(Colors.RED + "\n  ❌ Account ID و API Token الزامی هستند!" + Colors.END)
+        return None, None
+
+    save_opt = input(Colors.BOLD + "\n  💾 آیا این کلیدها ذخیره شوند؟ (Y/n): " + Colors.END).strip().lower()
+    if save_opt != 'n':
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                json.dump({"account_id": acc_id, "api_token": token}, f)
+            print(Colors.GREEN + "  [✓] با موفقیت روی دستگاه ذخیره شد." + Colors.END)
+        except Exception as e:
+            print(Colors.RED + f"  ⚠️ خطا در ذخیره‌سازی: {e}" + Colors.END)
+
+    return acc_id, token
+
+def menu_option_7_subscription_builder():
+    print_option_7_header()
+    account_id, api_token = get_cf_credentials()
+    if not account_id or not api_token:
+        return
+
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+
+    db_name = "amir-db"
+    print(Colors.BLUE + "\n[+] در حال آماده‌سازی و بررسی دیتابیس D1..." + Colors.END)
+    
+    res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers)
+    db_id = None
+    if res.status_code == 200:
+        for db in res.json().get("result", []):
+            if db.get("name") == db_name:
+                db_id = db.get("uuid")
+                print(Colors.GREEN + f"  [✓] دیتابیس اختصاصی '{db_name}' آماده است." + Colors.END)
+                break
+    elif res.status_code == 401:
+        print(Colors.RED + "  ❌ خطا: API Token وارد شده نامعتبر است!" + Colors.END)
+        return
+
+    if not db_id:
+        print(Colors.YELLOW + "  [+] در حال ایجاد دیتابیس جدید D1..." + Colors.END)
+        create_res = requests.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database",
+            headers=headers,
+            json={"name": db_name}
+        )
+        if create_res.status_code == 200:
+            db_id = create_res.json()["result"]["uuid"]
+            print(Colors.GREEN + f"  [✓] دیتابیس با موفقیت ایجاد شد." + Colors.END)
+        else:
+            print(Colors.RED + f"  ❌ خطا در ایحاد دیتابیس: {create_res.text}" + Colors.END)
+            return
+
+    print(Colors.CYAN + "\n" + "─"*65 + Colors.END)
+    print(Colors.BOLD + "📝 تنظیمات کانفیگ و لینک ساب‌سکرپشن" + Colors.END)
+    print(Colors.CYAN + "─"*65 + Colors.END)
+
+    username = input(Colors.BOLD + "\n👤 نام کاربر (مثال: Amir_VIP): " + Colors.END).strip()
+    if not username:
+        print(Colors.RED + "❌ نام کاربر الزامی است!" + Colors.END)
+        return
+
+    print("\n🌐 انتخاب نوع پروتکل:")
+    print("  1) VLESS (پیش‌فرض)")
+    print("  2) VMess")
+    print("  3) ترکیبی (VLESS + VMess)")
+    p_choice = input(Colors.BOLD + "👉 انتخاب (1-3): " + Colors.END).strip()
+    selected_proto = {"1": "VLESS", "2": "VMess", "3": "VLESS + VMess"}.get(p_choice, "VLESS")
+
+    cfg_count_in = input(Colors.BOLD + "\n🔢 تعداد کانفیگ داخل لینک ساب (پیش‌فرض 5): " + Colors.END).strip()
+    config_count = int(cfg_count_in) if cfg_count_in.isdigit() else 5
+
+    vol_in = input(Colors.BOLD + "📊 محدودیت حجم (GB) [اینتر = نامحدود]: " + Colors.END).strip()
+    volume_gb = float(vol_in) if vol_in else 0.0
+
+    exp_in = input(Colors.BOLD + "📅 مدت اعتبار به روز [اینتر = نامحدود]: " + Colors.END).strip()
+    expire_days = int(exp_in) if exp_in.isdigit() else 0
+
+    ips_in = input(Colors.BOLD + "👥 سقف اتصال دستگاه‌های همزمان (پیش‌فرض 2): " + Colors.END).strip()
+    max_ips = int(ips_in) if ips_in.isdigit() else 2
+
+    user_uuid = str(uuid.uuid4())
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # ساخت جدول و ثبت دیتابیس
+    create_table_sql = """
+    CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY, user_uuid TEXT, protocol TEXT,
+        config_count INTEGER, volume_gb REAL, expire_days INTEGER,
+        max_ips INTEGER, created_at TEXT
+    );
+    """
+    requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": create_table_sql})
+
+    insert_sql = "INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?, ?, ?, ?);"
+    requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
+        headers=headers,
+        json={"sql": insert_sql, "params": [username, user_uuid, selected_proto, config_count, volume_gb, expire_days, max_ips, created_at]}
+    )
+
+    worker_sub_url = f"https://amir-vless-worker.workers.dev/sub/{username}"
+    qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={worker_sub_url}"
+
+    vol_str = "نامحدود" if volume_gb == 0 else f"{volume_gb} GB"
+    exp_str = "نامحدود" if expire_days == 0 else f"{expire_days} روز"
+
+    output_banner = f"""
+{Colors.CYAN}┌──────────────────────────────────────────────────────────────────┐
+│                         AMIR CONFIG SPEED                        │
+├──────────────────────────────────────────────────────────────────┤{Colors.END}
+  👤 کاربر: {Colors.BOLD}{username}{Colors.END}
+  🌐 پروتکل: {Colors.GREEN}{selected_proto}{Colors.END}
+  🔢 تعداد کانفیگ: {Colors.YELLOW}{config_count} عدد{Colors.END}
+  📊 حجم اختصاصی: {Colors.CYAN}{vol_str}{Colors.END}
+  📅 مدت اعتبار: {Colors.CYAN}{exp_str}{Colors.END}
+  👥 سقف دستگاه همزمان: {Colors.MAGENTA}{max_ips} دستگاه{Colors.END}
+  🔑 UUID اختصاصی: {Colors.WHITE}{user_uuid}{Colors.END}
+{Colors.CYAN}├──────────────────────────────────────────────────────────────────┤{Colors.END}
+  🔗 🌍 **لینک ساب‌سکرپشن اختصاصی:**
+  {Colors.GREEN}{worker_sub_url}{Colors.END}
+
+  📱 🏁 **QR Code لینک ساب:**
+  {Colors.BLUE}{qr_code_url}{Colors.END}
+{Colors.CYAN}└──────────────────────────────────────────────────────────────────┘{Colors.END}
+"""
+    print(output_banner)
+
+    # ارسال خودکار به پیام‌رسان‌های فعال
+    send_all_sub_msg = (
+        f"⚡ <b>AMIR CONFIG SPEED - New Subscription</b>\n\n"
+        f"👤 کاربر: <b>{username}</b>\n"
+        f"🌐 پروتکل: <b>{selected_proto}</b>\n"
+        f"🔢 تعداد کانفیگ: <b>{config_count}</b>\n"
+        f"📊 حجم: <b>{vol_str}</b>\n"
+        f"📅 اعتبار: <b>{exp_str}</b>\n"
+        f"👥 سقف کاربر همزمان: <b>{max_ips}</b>\n\n"
+        f"🔗 <b>لینک ساب‌سکرپشن:</b>\n<code>{worker_sub_url}</code>\n\n"
+        f"📱 <b>QR Code:</b>\n{qr_code_url}"
+    )
+    send_all(send_all_sub_msg)
+
+
 def menu_option_1():
     print(Colors.YELLOW + "\n[>] Option 1: Test IP Health (Edge Speed Scanner)" + Colors.END)
     ips = select_ip_source()
-    if not ips:
-        print(Colors.RED + "[!] No IPs available to test." + Colors.END)
-        return
-
+    if not ips: return
     working_results, total_ips = run_scanner_engine(
         ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
@@ -506,7 +641,6 @@ def menu_option_2():
     print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
     ips = select_ip_source()
     if not ips: return
-
     working_results, total_ips = run_scanner_engine(
         ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
@@ -520,12 +654,11 @@ def menu_option_3():
     ips = select_ip_source()
     if not ips: return
     tasks_list = [(ip, port) for ip in ips for port in PORTS_TO_TEST]
-    total_combinations = len(tasks_list)
     results = []
     import threading
     thread_lock = threading.Lock()
 
-    print(Colors.BLUE + f"\n[*] Testing TCP connection on {total_combinations} combinations (Press Ctrl+C to stop)...\n" + Colors.END)
+    print(Colors.BLUE + f"\n[*] Testing TCP connection on {len(tasks_list)} combinations...\n" + Colors.END)
 
     def worker_task(item):
         if stop_scan: return
@@ -537,8 +670,6 @@ def menu_option_3():
             with thread_lock:
                 results.append((res_str, 0, country))
                 print(f"{res_str:<22} | Country: {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}")
-        else:
-            print(f"{res_str:<22} | {Colors.RED}[CLOSED]{Colors.END}")
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -547,32 +678,19 @@ def menu_option_3():
                 if stop_scan: break
         except KeyboardInterrupt:
             stop_scan = True
-            print(Colors.YELLOW + "\n[!] Stopped by user. Saving working results..." + Colors.END)
 
-    print("\n" + "-" * 65)
-    finalize_and_send(results, total_combinations, "Open Ports Table", "تست_پورت_خالی.txt")
+    finalize_and_send(results, len(tasks_list), "Open Ports Table", "تست_پورت_خالی.txt")
 
-# گزینه ۴ کاملاً مستقیم: کانفیگ -> آی‌پی -> (اینتر برای تست همه پورت‌های تصویر)
 def menu_option_4():
     global stop_scan
     print(Colors.YELLOW + "\n[>] Option 4: Smart Config Combiner (Direct IP)" + Colors.END)
-    
-    # 1. ورودی کانفیگ خام
     raw_config = input(Colors.BOLD + "Enter Raw Config: " + Colors.END).strip()
     if not raw_config: return
-    
-    # 2. ورودی مستقیم آی‌پی (بدون منوی اضافه)
     target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
     if not target_ip: return
+    port_input = input(Colors.BOLD + "Enter Port (Leave empty for ALL ports): " + Colors.END).strip()
     
-    # 3. دریافت پورت (در صورت زدن اینتر، تمام پورت‌های TLS و Non-TLS اسکن می‌شوند)
-    port_input = input(Colors.BOLD + "Enter Port (Leave empty to test ALL 13 ports from BPB): " + Colors.END).strip()
-    
-    if port_input.isdigit():
-        ports_to_check = [int(port_input)]
-    else:
-        ports_to_check = PORTS_TO_TEST
-
+    ports_to_check = [int(port_input)] if port_input.isdigit() else PORTS_TO_TEST
     ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
     found_ips = re.findall(ip_pattern, raw_config)
     old_ip = found_ips[0] if found_ips else None
@@ -581,31 +699,19 @@ def menu_option_4():
     import threading
     thread_lock = threading.Lock()
 
-    print(Colors.BLUE + f"\n[*] Running 7-Gate Test on {len(ports_to_check)} ports for IP: {target_ip}...\n" + Colors.END)
-
     def worker_task(p):
         if stop_scan: return
         lat = check_ip_http_latency(target_ip, port=p, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
         if lat is not None:
             country = get_ip_country(target_ip)
-            
-            # جایگزینی هوشمند آی‌پی قدیمی با آی‌پی جدید
-            if old_ip:
-                new_cfg = raw_config.replace(old_ip, target_ip)
-            else:
-                new_cfg = raw_config
-
-            # جایگزینی پورت متصل به آی‌پی
+            new_cfg = raw_config.replace(old_ip, target_ip) if old_ip else raw_config
             new_cfg = re.sub(rf"({re.escape(target_ip)}):(\d+)", rf"\1:{p}", new_cfg)
-            
             if f":{p}" not in new_cfg and old_ip:
                 new_cfg = re.sub(r':\d+', f':{p}', new_cfg, count=1)
 
             with thread_lock:
                 working_results.append((target_ip, lat, country, new_cfg))
                 print(f"{target_ip}:{p:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
-        else:
-            print(f"{target_ip}:{p:<18} | {Colors.RED}[DEAD]{Colors.END}")
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -614,33 +720,20 @@ def menu_option_4():
                 if stop_scan: break
         except KeyboardInterrupt:
             stop_scan = True
-            print(Colors.YELLOW + "\n[!] Stopped by user. Saving and sending..." + Colors.END)
 
-    print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
-    
     finalize_and_send(working_results, len(ports_to_check), "Smart Combined Config Results", "ترکیب_کانفیگ_با_ایپی.txt", is_config=True)
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
-    print(Colors.CYAN + "\nSelect CDN Protocol type for bypass scanning:" + Colors.END)
-    
     for key, name in MAHSA_CDN_TYPES.items():
-        print(f"  {Colors.BOLD}[{key}]{Colors.END} {name}")
-
+        print(f"  [{key}] {name}")
     selection = input(Colors.BOLD + "\n[>] Choose protocol number (1-5): " + Colors.END).strip()
-    
-    if selection not in MAHSA_CDN_TYPES:
-        print(Colors.RED + "[!] Invalid selection!" + Colors.END)
-        return
+    if selection not in MAHSA_CDN_TYPES: return
 
     profile_name = MAHSA_CDN_TYPES[selection]
-    print(Colors.GREEN + f"[+] Selected Profile: [{selection}] {profile_name}" + Colors.END)
-    
     ips = select_ip_source()
-    if not ips:
-        print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
-        return
+    if not ips: return
 
     working_results, total_ips = run_scanner_engine(
         ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
@@ -651,42 +744,22 @@ def menu_option_5_mahsa():
 
 def menu_option_6_custom_scanner():
     current_custom = SCAN_SETTINGS.copy()
-    
     print(Colors.YELLOW + "\n[>] Option 6: Custom Dedicated Scanner & Settings" + Colors.END)
-    print(Colors.CYAN + "\n=== Custom Scanner Configuration ===" + Colors.END)
-    print(f"1. Test Domain (SNI)  : {current_custom['domain']}")
-    print(f"2. Test Path          : {current_custom['path']}")
-    print(f"3. Port               : {current_custom['port']}")
-    print(f"4. Timeout (s)        : {current_custom['timeout']}")
-    print(f"5. Concurrent Workers : {current_custom['workers']}")
-    print(f"6. Test Download      : {'Enabled' if current_custom['test_download'] else 'Disabled'}")
-    
-    choice = input(Colors.BOLD + "\nDo you want to change these custom settings before scanning? (y/N): " + Colors.END).strip().lower()
+    choice = input(Colors.BOLD + "\nDo you want to change custom settings before scanning? (y/N): " + Colors.END).strip().lower()
     if choice == 'y':
         d = input(f"Enter Test Domain [{current_custom['domain']}]: ").strip()
         if d: current_custom['domain'] = d
         p = input(f"Enter Port [{current_custom['port']}]: ").strip()
         if p.isdigit(): current_custom['port'] = int(p)
-        t = input(f"Enter Timeout [{current_custom['timeout']}]: ").strip()
-        try:
-            if t: current_custom['timeout'] = float(t)
-        except ValueError:
-            pass
-        w = input(f"Enter Concurrent Workers [{current_custom['workers']}]: ").strip()
-        if w.isdigit(): current_custom['workers'] = int(w)
-        print(Colors.GREEN + "[+] Custom settings applied temporarily for this session!" + Colors.END)
 
     ips = select_ip_source()
-    if not ips:
-        print(Colors.RED + "[!] No IPs available to scan." + Colors.END)
-        return
-
+    if not ips: return
     working_results, total_ips = run_scanner_engine(
         ips, current_custom['port'], current_custom['domain'], 
         current_custom['timeout'], current_custom['test_download'], 
         current_custom['path'], current_custom['workers']
     )
-    finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table", "اسکن_ایپی_با_تنظیمات_خودت.txt")
+    finalize_and_send(working_results, total_ips, f"Custom Scanner Results Table", "اسکن_ایپی_با_تنظیمات_خودت.txt")
 
 def main_menu():
     while True:
@@ -698,7 +771,8 @@ def main_menu():
  ║  {Colors.MAGENTA}[3] Test TCP PORT Only{Colors.CYAN}                                         ║
  ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
- ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings (NEW!){Colors.CYAN}                 ║
+ ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                       ║
+ ║  {Colors.BOLD}{Colors.GREEN}[7] AMIR CONFIG SPEED (Cloudflare Subscription Builder){Colors.CYAN}   ║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
@@ -717,11 +791,11 @@ def main_menu():
             menu_option_5_mahsa()
         elif choice == "6":
             menu_option_6_custom_scanner()
+        elif choice == "7":
+            menu_option_7_subscription_builder()
         elif choice == "0":
             print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
             sys.exit(0)
-        else:
-            print(Colors.RED + "[!] Invalid option selected." + Colors.END)
 
         input(Colors.BOLD + "\n[*] Press Enter to continue..." + Colors.END)
         os.system("clear")
