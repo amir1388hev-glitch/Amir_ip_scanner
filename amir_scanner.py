@@ -68,6 +68,64 @@ MAHSA_CDN_TYPES = {
     "5": "Any CDN (Mixed)"
 }
 
+# کد جاوااسکریپت ورکر جهت دیپلوی خودکار
+WORKER_JS_CODE = """
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const pathParts = url.pathname.split('/').filter(Boolean);
+
+    if (pathParts[0] === 'sub' && pathParts[1]) {
+      const username = pathParts[1];
+
+      try {
+        const { results } = await env.DB.prepare(
+          "SELECT * FROM users WHERE username = ?"
+        ).bind(username).all();
+
+        if (!results || results.length === 0) {
+          return new Response("User not found", { status: 404 });
+        }
+
+        const user = results[0];
+
+        const cleanIPs = [
+          "104.16.1.1:443",
+          "104.17.1.1:443",
+          "162.159.135.1:443",
+          "172.67.1.1:443"
+        ];
+
+        let configs = [];
+        const count = Math.min(user.config_count || 5, cleanIPs.length);
+
+        for (let i = 0; i < count; i++) {
+          const [ip, port] = cleanIPs[i].split(':');
+          const configName = `${user.username}-Node-${i + 1}`;
+          const vlessConfig = `vless://${user.user_uuid}@${ip}:${port}?encryption=none&security=tls&type=ws&host=${url.hostname}&path=%2F#${encodeURIComponent(configName)}`;
+          configs.push(vlessConfig);
+        }
+
+        const rawText = configs.join('\\n');
+        const base64Output = btoa(rawText);
+
+        return new Response(base64Output, {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+
+      } catch (err) {
+        return new Response("Database Error: " + err.message, { status: 500 });
+      }
+    }
+
+    return new Response("AMIR Config Speed Subscription Server Active.", { status: 200 });
+  }
+};
+"""
+
 stop_scan = False
 
 def get_ip_country(ip):
@@ -336,58 +394,253 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╣
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.1.0 (Auto D1 Subscription Engine){Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.5.0 (Full Auto-Deploy Worker Engine){Colors.CYAN} ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
 """
     print(banner)
 
-def build_separated_tables_message(working_results, title_msg, is_config=False):
-    country_groups = {}
-    for item in working_results:
-        if is_config:
-            ip, lat, country, cfg_str = item
-            key_val = cfg_str
-        else:
-            target_str, lat, country = item
-            key_val = target_str
+def get_cf_credentials():
+    acc_id, token = "", ""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                acc_id = data.get("account_id", "")
+                token = data.get("api_token", "")
+        except: pass
 
-        if country not in country_groups:
-            country_groups[country] = []
-        country_groups[country].append(key_val)
+    if acc_id and token:
+        print(Colors.GREEN + "  [✓] Saved Cloudflare Credentials Found." + Colors.END)
+        use_saved = input(Colors.BOLD + "  👉 Use saved credentials? (Y/n): " + Colors.END).strip().lower()
+        if use_saved != 'n':
+            return acc_id, token
 
-    message_blocks = [f"📊 {title_msg}\n"]
-    for country, items in country_groups.items():
-        table_border = "┌───────────────────────────────┐"
-        table_footer = "└───────────────────────────────┘"
-        block_lines = [
-            table_border,
-            f"🏴 کشور: {country} ({len(items)} عدد)",
-            "├───────────────────────────────┤"
+    print(Colors.YELLOW + "\n  🔑 Please enter your Cloudflare Keys:\n" + Colors.END)
+    acc_id = input(Colors.BOLD + "  1. Account ID: " + Colors.END).strip()
+    token = input(Colors.BOLD + "  2. API Token : " + Colors.END).strip()
+
+    if not acc_id or not token:
+        print(Colors.RED + "\n  ❌ Account ID and API Token are required!" + Colors.END)
+        return None, None
+
+    save_opt = input(Colors.BOLD + "\n  💾 Save credentials on device? (Y/n): " + Colors.END).strip().lower()
+    if save_opt != 'n':
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                json.dump({"account_id": acc_id, "api_token": token}, f)
+            print(Colors.GREEN + "  [✓] Successfully saved." + Colors.END)
+        except Exception as e:
+            print(Colors.RED + f"  ⚠️ Save error: {e}" + Colors.END)
+
+    return acc_id, token
+
+def deploy_worker_automatically(account_id, api_token, db_id, worker_name="amir-sub"):
+    """دیپلوی کامل و خودکار کد جاوااسکریپت و متصل کردن دیتابیس D1"""
+    headers = {
+        "Authorization": f"Bearer {api_token}"
+    }
+    
+    # ۱. دریافت ساب‌دامنه Workers کاربر
+    subdomain_res = requests.get(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/subdomain",
+        headers=headers
+    )
+    subdomain = ""
+    if subdomain_res.status_code == 200:
+        subdomain = subdomain_res.json().get("result", {}).get("subdomain", "")
+
+    if not subdomain:
+        print(Colors.YELLOW + "  [!] Workers Subdomain not initialized. Enabling..." + Colors.END)
+        # ثبت دامنه پیش‌فرض در صورت عدم وجود
+        init_sub_res = requests.put(
+            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/subdomain",
+            headers=headers,
+            json={"subdomain": f"amir-sub-{account_id[:6]}"}
+        )
+        if init_sub_res.status_code == 200:
+            subdomain = init_sub_res.json().get("result", {}).get("subdomain", "")
+
+    print(Colors.BLUE + f"  [*] Deploying JavaScript Worker '{worker_name}'..." + Colors.END)
+
+    metadata = {
+        "main_module": "worker.js",
+        "bindings": [
+            {
+                "name": "DB",
+                "type": "d1",
+                "id": db_id
+            }
         ]
-        for val in items: block_lines.append(f" {val}")
-        block_lines.append(table_footer)
-        message_blocks.append("\n".join(block_lines))
+    }
 
-    return "\n\n".join(message_blocks)
+    files = {
+        "metadata": ("metadata.json", json.dumps(metadata), "application/json"),
+        "worker.js": ("worker.js", WORKER_JS_CODE, "application/javascript+module")
+    }
 
-def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_config=False):
-    working_results.sort(key=lambda x: x[1])
-    clean_ips_for_file = []
-    for item in working_results:
-        if is_config:
-            ip, lat, country, cfg_str = item
-            clean_ips_for_file.append(cfg_str)
+    deploy_res = requests.put(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/scripts/{worker_name}",
+        headers=headers,
+        files=files
+    )
+
+    if deploy_res.status_code == 200:
+        # فعال‌سازی مسیر subdomain روی ورکر
+        requests.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/scripts/{worker_name}/subdomain",
+            headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
+            json={"enabled": True}
+        )
+        full_worker_url = f"https://{worker_name}.{subdomain}.workers.dev"
+        print(Colors.GREEN + f"  [✓] Worker successfully deployed & D1 bound! URL: {full_worker_url}" + Colors.END)
+        return full_worker_url
+    else:
+        print(Colors.RED + f"  ❌ Worker Deploy Error: {deploy_res.text}" + Colors.END)
+        return None
+
+def menu_option_7_subscription_builder():
+    os.system("clear")
+    print_banner()
+    account_id, api_token = get_cf_credentials()
+    if not account_id or not api_token:
+        return
+
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+
+    db_name = "amir-db"
+    print(Colors.BLUE + "\n[+] Checking Cloudflare D1 Databases..." + Colors.END)
+    
+    res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers)
+    db_id = None
+    
+    if res.status_code == 200:
+        databases = res.json().get("result", [])
+        for db in databases:
+            if db.get("name") == db_name:
+                db_id = db.get("uuid")
+                print(Colors.GREEN + f"  [✓] Dedicated database '{db_name}' is ready." + Colors.END)
+                break
+        
+        if not db_id and len(databases) >= 10:
+            db_id = databases[0].get("uuid")
+            print(Colors.YELLOW + f"  [!] D1 Limit reached. Using DB: '{databases[0].get('name')}'" + Colors.END)
+            
+    elif res.status_code == 401:
+        print(Colors.RED + "  ❌ Error: Invalid API Token!" + Colors.END)
+        return
+
+    if not db_id:
+        print(Colors.YELLOW + "  [+] Creating new D1 database..." + Colors.END)
+        create_res = requests.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database",
+            headers=headers,
+            json={"name": db_name}
+        )
+        if create_res.status_code == 200:
+            db_id = create_res.json()["result"]["uuid"]
+            print(Colors.GREEN + f"  [✓] Database created successfully." + Colors.END)
         else:
-            target_str, lat, country = item
-            clean_ips_for_file.append(target_str)
+            print(Colors.RED + f"  ❌ Database error: {create_res.text}" + Colors.END)
+            return
 
-    save_to_file(save_filename, "\n".join(clean_ips_for_file))
-    if working_results:
-        separated_text = build_separated_tables_message(working_results, title_msg, is_config)
-        send_all(separated_text)
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
+    # دیپلوی اتوماتیک ورکر جاوااسکریپت
+    worker_url = deploy_worker_automatically(account_id, api_token, db_id)
+    if not worker_url:
+        print(Colors.RED + "❌ Could not setup worker properly. Aborting." + Colors.END)
+        return
+
+    print(Colors.CYAN + "\n" + "─"*65 + Colors.END)
+    print(Colors.BOLD + "📝 Subscription Link Configuration" + Colors.END)
+    print(Colors.CYAN + "─"*65 + Colors.END)
+
+    username = input(Colors.BOLD + "\n👤 Enter Username (e.g., Amir_VIP): " + Colors.END).strip()
+    if not username:
+        print(Colors.RED + "❌ Username is required!" + Colors.END)
+        return
+
+    print("\n🌐 Select Protocol:")
+    print("  1) VLESS (Default)")
+    print("  2) VMess")
+    print("  3) Mixed (VLESS + VMess)")
+    p_choice = input(Colors.BOLD + "👉 Selection (1-3): " + Colors.END).strip()
+    selected_proto = {"1": "VLESS", "2": "VMess", "3": "VLESS + VMess"}.get(p_choice, "VLESS")
+
+    cfg_count_in = input(Colors.BOLD + "\n🔢 Config Count (Default 5): " + Colors.END).strip()
+    config_count = int(cfg_count_in) if cfg_count_in.isdigit() else 5
+
+    vol_in = input(Colors.BOLD + "📊 Volume Limit (GB) [Enter = Unlimited]: " + Colors.END).strip()
+    volume_gb = float(vol_in) if vol_in else 0.0
+
+    exp_in = input(Colors.BOLD + "📅 Expiration Days [Enter = Unlimited]: " + Colors.END).strip()
+    expire_days = int(exp_in) if exp_in.isdigit() else 0
+
+    ips_in = input(Colors.BOLD + "👥 Max Device Limit (Default 2): " + Colors.END).strip()
+    max_ips = int(ips_in) if ips_in.isdigit() else 2
+
+    user_uuid = str(uuid.uuid4())
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # ساخت جدول و ثبت کاربر در D1
+    create_table_sql = """
+    CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY, user_uuid TEXT, protocol TEXT,
+        config_count INTEGER, volume_gb REAL, expire_days INTEGER,
+        max_ips INTEGER, created_at TEXT
+    );
+    """
+    requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": create_table_sql})
+
+    insert_sql = "INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?, ?, ?, ?);"
+    requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
+        headers=headers,
+        json={"sql": insert_sql, "params": [username, user_uuid, selected_proto, config_count, volume_gb, expire_days, max_ips, created_at]}
+    )
+
+    worker_sub_url = f"{worker_url}/sub/{username}"
+    qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={worker_sub_url}"
+
+    vol_str = "Unlimited" if volume_gb == 0 else f"{volume_gb} GB"
+    exp_str = "Unlimited" if expire_days == 0 else f"{expire_days} Days"
+
+    output_banner = f"""
+{Colors.CYAN}┌──────────────────────────────────────────────────────────────────┐
+│                         AMIR CONFIG SPEED                        │
+├──────────────────────────────────────────────────────────────────┤{Colors.END}
+  👤 User: {Colors.BOLD}{username}{Colors.END}
+  🌐 Protocol: {Colors.GREEN}{selected_proto}{Colors.END}
+  🔢 Config Count: {Colors.YELLOW}{config_count}{Colors.END}
+  📊 Volume: {Colors.CYAN}{vol_str}{Colors.END}
+  📅 Expiration: {Colors.CYAN}{exp_str}{Colors.END}
+  👥 Max Devices: {Colors.MAGENTA}{max_ips}{Colors.END}
+  🔑 UUID: {Colors.WHITE}{user_uuid}{Colors.END}
+{Colors.CYAN}├──────────────────────────────────────────────────────────────────┤{Colors.END}
+  🔗 **Subscription URL:**
+  {Colors.GREEN}{worker_sub_url}{Colors.END}
+
+  📱 **QR Code:**
+  {Colors.BLUE}{qr_code_url}{Colors.END}
+{Colors.CYAN}└──────────────────────────────────────────────────────────────────┘{Colors.END}
+"""
+    print(output_banner)
+
+    send_all_sub_msg = (
+        f"⚡ AMIR CONFIG SPEED - Subscription Created\n\n"
+        f"👤 User: {username}\n"
+        f"🌐 Protocol: {selected_proto}\n"
+        f"🔢 Configs: {config_count}\n"
+        f"📊 Volume: {vol_str}\n"
+        f"📅 Expire: {exp_str}\n"
+        f"👥 Max Devices: {max_ips}\n\n"
+        f"🔗 Subscription Link:\n{worker_sub_url}\n\n"
+        f"📱 QR Code:\n{qr_code_url}"
+    )
+    send_all(send_all_sub_msg)
 
 def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
     global stop_scan
@@ -435,180 +688,51 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
     print("\n" + "-" * 65)
     return working_results, total_tasks
 
-# ==========================================
-# 🚀 AMIR CONFIG SPEED - Fully Automated Option 7
-# ==========================================
-def get_cf_credentials():
-    acc_id, token = "", ""
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                acc_id = data.get("account_id", "")
-                token = data.get("api_token", "")
-        except: pass
-
-    if acc_id and token:
-        print(Colors.GREEN + "  [✓] Saved Cloudflare Credentials Found." + Colors.END)
-        use_saved = input(Colors.BOLD + "  👉 Use saved credentials? (Y/n): " + Colors.END).strip().lower()
-        if use_saved != 'n':
-            return acc_id, token
-
-    print(Colors.YELLOW + "\n  🔑 Please enter your Cloudflare Keys:\n" + Colors.END)
-    acc_id = input(Colors.BOLD + "  1. Account ID: " + Colors.END).strip()
-    token = input(Colors.BOLD + "  2. API Token : " + Colors.END).strip()
-
-    if not acc_id or not token:
-        print(Colors.RED + "\n  ❌ Account ID and API Token are required!" + Colors.END)
-        return None, None
-
-    save_opt = input(Colors.BOLD + "\n  💾 Save credentials on device? (Y/n): " + Colors.END).strip().lower()
-    if save_opt != 'n':
-        try:
-            with open(CONFIG_FILE, "w") as f:
-                json.dump({"account_id": acc_id, "api_token": token}, f)
-            print(Colors.GREEN + "  [✓] Successfully saved." + Colors.END)
-        except Exception as e:
-            print(Colors.RED + f"  ⚠️ Save error: {e}" + Colors.END)
-
-    return acc_id, token
-
-def menu_option_7_subscription_builder():
-    os.system("clear")
-    print_banner()
-    account_id, api_token = get_cf_credentials()
-    if not account_id or not api_token:
-        return
-
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
-
-    db_name = "amir-db"
-    print(Colors.BLUE + "\n[+] Checking Cloudflare D1 Databases..." + Colors.END)
-    
-    res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers)
-    db_id = None
-    
-    if res.status_code == 200:
-        databases = res.json().get("result", [])
-        for db in databases:
-            if db.get("name") == db_name:
-                db_id = db.get("uuid")
-                print(Colors.GREEN + f"  [✓] Dedicated database '{db_name}' is ready." + Colors.END)
-                break
-        
-        # مدیریت خودکار سقف ۱۰ دیتابیس کلودفلر
-        if not db_id and len(databases) >= 10:
-            db_id = databases[0].get("uuid")
-            print(Colors.YELLOW + f"  [!] Account D1 limit reached (10 DBs). Using existing DB: '{databases[0].get('name')}'" + Colors.END)
-            
-    elif res.status_code == 401:
-        print(Colors.RED + "  ❌ Error: Invalid API Token!" + Colors.END)
-        return
-
-    if not db_id:
-        print(Colors.YELLOW + "  [+] Creating new D1 database..." + Colors.END)
-        create_res = requests.post(
-            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database",
-            headers=headers,
-            json={"name": db_name}
-        )
-        if create_res.status_code == 200:
-            db_id = create_res.json()["result"]["uuid"]
-            print(Colors.GREEN + f"  [✓] Database created successfully." + Colors.END)
+def build_separated_tables_message(working_results, title_msg, is_config=False):
+    country_groups = {}
+    for item in working_results:
+        if is_config:
+            ip, lat, country, cfg_str = item
+            key_val = cfg_str
         else:
-            print(Colors.RED + f"  ❌ Database error: {create_res.text}" + Colors.END)
-            return
+            target_str, lat, country = item
+            key_val = target_str
 
-    print(Colors.CYAN + "\n" + "─"*65 + Colors.END)
-    print(Colors.BOLD + "📝 Subscription Link Configuration" + Colors.END)
-    print(Colors.CYAN + "─"*65 + Colors.END)
+        if country not in country_groups:
+            country_groups[country] = []
+        country_groups[country].append(key_val)
 
-    username = input(Colors.BOLD + "\n👤 Enter Username (e.g., Amir_VIP): " + Colors.END).strip()
-    if not username:
-        print(Colors.RED + "❌ Username is required!" + Colors.END)
-        return
+    message_blocks = [f"📊 {title_msg}\n"]
+    for country, items in country_groups.items():
+        table_border = "┌───────────────────────────────┐"
+        table_footer = "└───────────────────────────────┘"
+        block_lines = [
+            table_border,
+            f"🏴 کشور: {country} ({len(items)} عدد)",
+            "├───────────────────────────────┤"
+        ]
+        for val in items: block_lines.append(f" {val}")
+        block_lines.append(table_footer)
+        message_blocks.append("\n".join(block_lines))
 
-    print("\n🌐 Select Protocol:")
-    print("  1) VLESS (Default)")
-    print("  2) VMess")
-    print("  3) Mixed (VLESS + VMess)")
-    p_choice = input(Colors.BOLD + "👉 Selection (1-3): " + Colors.END).strip()
-    selected_proto = {"1": "VLESS", "2": "VMess", "3": "VLESS + VMess"}.get(p_choice, "VLESS")
+    return "\n\n".join(message_blocks)
 
-    cfg_count_in = input(Colors.BOLD + "\n🔢 Config Count (Default 5): " + Colors.END).strip()
-    config_count = int(cfg_count_in) if cfg_count_in.isdigit() else 5
+def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_config=False):
+    working_results.sort(key=lambda x: x[1])
+    clean_ips_for_file = []
+    for item in working_results:
+        if is_config:
+            ip, lat, country, cfg_str = item
+            clean_ips_for_file.append(cfg_str)
+        else:
+            target_str, lat, country = item
+            clean_ips_for_file.append(target_str)
 
-    vol_in = input(Colors.BOLD + "📊 Volume Limit (GB) [Enter = Unlimited]: " + Colors.END).strip()
-    volume_gb = float(vol_in) if vol_in else 0.0
-
-    exp_in = input(Colors.BOLD + "📅 Expiration Days [Enter = Unlimited]: " + Colors.END).strip()
-    expire_days = int(exp_in) if exp_in.isdigit() else 0
-
-    ips_in = input(Colors.BOLD + "👥 Max Device Limit (Default 2): " + Colors.END).strip()
-    max_ips = int(ips_in) if ips_in.isdigit() else 2
-
-    user_uuid = str(uuid.uuid4())
-    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # ساخت جدول و ثبت کاربر
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY, user_uuid TEXT, protocol TEXT,
-        config_count INTEGER, volume_gb REAL, expire_days INTEGER,
-        max_ips INTEGER, created_at TEXT
-    );
-    """
-    requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": create_table_sql})
-
-    insert_sql = "INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?, ?, ?, ?);"
-    requests.post(
-        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
-        headers=headers,
-        json={"sql": insert_sql, "params": [username, user_uuid, selected_proto, config_count, volume_gb, expire_days, max_ips, created_at]}
-    )
-
-    worker_sub_url = f"https://amir-vless-worker.workers.dev/sub/{username}"
-    qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={worker_sub_url}"
-
-    vol_str = "Unlimited" if volume_gb == 0 else f"{volume_gb} GB"
-    exp_str = "Unlimited" if expire_days == 0 else f"{expire_days} Days"
-
-    output_banner = f"""
-{Colors.CYAN}┌──────────────────────────────────────────────────────────────────┐
-│                         AMIR CONFIG SPEED                        │
-├──────────────────────────────────────────────────────────────────┤{Colors.END}
-  👤 User: {Colors.BOLD}{username}{Colors.END}
-  🌐 Protocol: {Colors.GREEN}{selected_proto}{Colors.END}
-  🔢 Config Count: {Colors.YELLOW}{config_count}{Colors.END}
-  📊 Volume: {Colors.CYAN}{vol_str}{Colors.END}
-  📅 Expiration: {Colors.CYAN}{exp_str}{Colors.END}
-  👥 Max Devices: {Colors.MAGENTA}{max_ips}{Colors.END}
-  🔑 UUID: {Colors.WHITE}{user_uuid}{Colors.END}
-{Colors.CYAN}├──────────────────────────────────────────────────────────────────┤{Colors.END}
-  🔗 **Subscription URL:**
-  {Colors.GREEN}{worker_sub_url}{Colors.END}
-
-  📱 **QR Code:**
-  {Colors.BLUE}{qr_code_url}{Colors.END}
-{Colors.CYAN}└──────────────────────────────────────────────────────────────────┘{Colors.END}
-"""
-    print(output_banner)
-
-    send_all_sub_msg = (
-        f"⚡ AMIR CONFIG SPEED - Subscription Created\n\n"
-        f"👤 User: {username}\n"
-        f"🌐 Protocol: {selected_proto}\n"
-        f"🔢 Configs: {config_count}\n"
-        f"📊 Volume: {vol_str}\n"
-        f"📅 Expire: {exp_str}\n"
-        f"👥 Max Devices: {max_ips}\n\n"
-        f"🔗 Subscription Link:\n{worker_sub_url}\n\n"
-        f"📱 QR Code:\n{qr_code_url}"
-    )
-    send_all(send_all_sub_msg)
+    save_to_file(save_filename, "\n".join(clean_ips_for_file))
+    if working_results:
+        separated_text = build_separated_tables_message(working_results, title_msg, is_config)
+        send_all(separated_text)
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
 
 def menu_option_1():
     print(Colors.YELLOW + "\n[>] Option 1: Test IP Health (Edge Speed Scanner)" + Colors.END)
@@ -756,7 +880,7 @@ def main_menu():
  ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
  ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                       ║
- ║  {Colors.BOLD}{Colors.GREEN}[7] AMIR CONFIG SPEED (Cloudflare Subscription Builder){Colors.CYAN}   ║
+ ║  {Colors.BOLD}{Colors.GREEN}[7] AMIR CONFIG SPEED (Full Auto-Deploy Subscription){Colors.CYAN}║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
