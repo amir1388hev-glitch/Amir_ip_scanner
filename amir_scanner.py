@@ -52,10 +52,10 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-PORTS_TO_TEST = [
-    443, 8443, 2053, 2083, 2087, 2096,
-    80, 8080, 8880, 2052, 2082, 2086, 2095,
-]
+# پورت‌های استخراج شده از تصویر BPB (TLS + Non-TLS)
+TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
+NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
+PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
 
 MAHSA_CDN_TYPES = {
     "1": "Cloudflare CDN",
@@ -274,39 +274,50 @@ def select_ip_source():
         print(Colors.RED + "[!] Invalid choice selected." + Colors.END)
         return []
 
+# سیستم اسکن ۷ خان رستم (سخت‌گیرانه و فوق‌العاده مطمئن)
 def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_download=True, path="/"):
-    for attempt in range(2):
+    for attempt in range(2): # خان هفتم: تکرار دوبار برای اطمینان از عدم قطع و وصلی
         start_time = time.time()
         try:
-            if port == 80:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(timeout)
-                sock.connect((ip, port))
-                if test_download:
-                    request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nConnection: close\r\n\r\n"
-                    sock.sendall(request_data.encode())
-                    sock.recv(1024)
-                latency = (time.time() - start_time) * 1000
+            # خان اول: ایجاد سوکت اولیه
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            
+            # خان دوم: تست Handshake اولیه TCP
+            sock.connect((ip, port))
+            
+            if port in NON_TLS_PORTS:
+                # خان چهارم (برای پورت غیر TLS): ارسال دیتا
+                request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+                sock.sendall(request_data.encode())
+                
+                # خان پنجم: تایید دریافت بایت پاسخ
+                response = sock.recv(1024)
                 sock.close()
-                return round(latency, 1)
+                if not response:
+                    continue
             else:
+                # خان سوم: تست Handshake SSL/TLS
                 context = ssl.create_default_context()
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
 
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(timeout)
-                sock.connect((ip, port))
                 tls_sock = context.wrap_socket(sock, server_hostname=domain)
                 
-                if test_download:
-                    request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nConnection: close\r\n\r\n"
-                    tls_sock.sendall(request_data.encode())
-                    tls_sock.recv(1024)
-                    
-                latency = (time.time() - start_time) * 1000
+                # خان چهارم (برای TLS): ارسال دیتا
+                request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+                tls_sock.sendall(request_data.encode())
+                
+                # خان پنجم: تایید دریافت پاسخ
+                response = tls_sock.recv(1024)
                 tls_sock.close()
-                return round(latency, 1)
+                if not response:
+                    continue
+
+            # خان ششم: محاسبه پینگ نهایی
+            latency = (time.time() - start_time) * 1000
+            return round(latency, 1)
+
         except Exception:
             if attempt == 1:
                 return None
@@ -327,7 +338,6 @@ def check_ip_port_connection(ip, port, timeout=2.0):
     return False
 
 def save_to_file(filename_only, data):
-    # لیست مسیرهای احتمالی برای ذخیره‌سازی فایل در ترموکس و اندروید
     possible_paths = [
         os.path.join(DOWNLOAD_DIR, filename_only),
         os.path.expanduser(f"~/storage/downloads/{filename_only}"),
@@ -356,7 +366,7 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.4 (Multi-Table Country) {Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.5 (7-Gate Hard Scan) {Colors.CYAN}    ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -542,49 +552,64 @@ def menu_option_3():
     print("\n" + "-" * 65)
     finalize_and_send(results, total_combinations, "Open Ports Table", "تست_پورت_خالی.txt")
 
+# گزینه ۴ کاملاً مستقیم: کانفیگ -> آی‌پی -> (اینتر برای تست همه پورت‌های تصویر)
 def menu_option_4():
     global stop_scan
-    print(Colors.YELLOW + "\n[>] Option 4: Combine Config (Auto Send)" + Colors.END)
-    raw_config = input(Colors.BOLD + "Enter Config: " + Colors.END).strip()
+    print(Colors.YELLOW + "\n[>] Option 4: Smart Config Combiner (Direct IP)" + Colors.END)
+    
+    # 1. ورودی کانفیگ خام
+    raw_config = input(Colors.BOLD + "Enter Raw Config: " + Colors.END).strip()
     if not raw_config: return
     
-    target_to_replace = input(Colors.BOLD + "Enter IP/Domain in config to replace (Default: YOUR_IP): " + Colors.END).strip()
-    if not target_to_replace:
-        target_to_replace = "YOUR_IP"
-
-    try:
-        manual_port = int(input(Colors.BOLD + "Enter target Port for config test (e.g. 443): " + Colors.END).strip() or 443)
-    except:
-        manual_port = 443
-
-    ips = select_ip_source()
-    if not ips: return
+    # 2. ورودی مستقیم آی‌پی (بدون منوی اضافه)
+    target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
+    if not target_ip: return
     
-    stop_scan = False
+    # 3. دریافت پورت (در صورت زدن اینتر، تمام پورت‌های TLS و Non-TLS اسکن می‌شوند)
+    port_input = input(Colors.BOLD + "Enter Port (Leave empty to test ALL 13 ports from BPB): " + Colors.END).strip()
+    
+    if port_input.isdigit():
+        ports_to_check = [int(port_input)]
+    else:
+        ports_to_check = PORTS_TO_TEST
+
+    ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    found_ips = re.findall(ip_pattern, raw_config)
+    old_ip = found_ips[0] if found_ips else None
+
     working_results = []
     import threading
     thread_lock = threading.Lock()
 
-    print(Colors.BLUE + f"\n[*] Scanning {len(ips)} IPs for config combination (Press Ctrl+C to stop)...\n" + Colors.END)
+    print(Colors.BLUE + f"\n[*] Running 7-Gate Test on {len(ports_to_check)} ports for IP: {target_ip}...\n" + Colors.END)
 
-    def worker_task(ip):
+    def worker_task(p):
         if stop_scan: return
-        lat = check_ip_http_latency(ip, port=manual_port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
+        lat = check_ip_http_latency(target_ip, port=p, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
         if lat is not None:
-            country = get_ip_country(ip)
+            country = get_ip_country(target_ip)
             
-            # جایگزینی درست در متن کانفیگ
-            new_cfg = raw_config.replace(target_to_replace, ip).replace("127.0.0.1", ip)
+            # جایگزینی هوشمند آی‌پی قدیمی با آی‌پی جدید
+            if old_ip:
+                new_cfg = raw_config.replace(old_ip, target_ip)
+            else:
+                new_cfg = raw_config
+
+            # جایگزینی پورت متصل به آی‌پی
+            new_cfg = re.sub(rf"({re.escape(target_ip)}):(\d+)", rf"\1:{p}", new_cfg)
             
+            if f":{p}" not in new_cfg and old_ip:
+                new_cfg = re.sub(r':\d+', f':{p}', new_cfg, count=1)
+
             with thread_lock:
-                working_results.append((ip, lat, country, new_cfg))
-                print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+                working_results.append((target_ip, lat, country, new_cfg))
+                print(f"{target_ip}:{p:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
         else:
-            print(f"{ip:<18} | {Colors.RED}[DEAD]{Colors.END}")
+            print(f"{target_ip}:{p:<18} | {Colors.RED}[DEAD]{Colors.END}")
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
-            futures = [executor.submit(worker_task, ip) for ip in ips]
+            futures = [executor.submit(worker_task, p) for p in ports_to_check]
             for f in as_completed(futures):
                 if stop_scan: break
         except KeyboardInterrupt:
@@ -594,7 +619,7 @@ def menu_option_4():
     print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
     
-    finalize_and_send(working_results, len(ips), "Config Combined Results Table", "ترکیب_کانفیگ_با_ایپی.txt", is_config=True)
+    finalize_and_send(working_results, len(ports_to_check), "Smart Combined Config Results", "ترکیب_کانفیگ_با_ایپی.txt", is_config=True)
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
