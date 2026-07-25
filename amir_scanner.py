@@ -29,7 +29,6 @@ class Colors:
 GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips"
 
 DOWNLOAD_DIR = "/sdcard/Download"
-SAVE_FILENAME = os.path.join(DOWNLOAD_DIR, "Amir_ip_scanner.txt")
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
 
 RUBIKA_BOT_TOKEN = "CABGDG0AGFFRWJKSBWBUBRUGGFMYNFITBVVDKTSVBNOKZWANYOITFQILZSSLCRKT"
@@ -327,14 +326,30 @@ def check_ip_port_connection(ip, port, timeout=2.0):
                 return False
     return False
 
-def save_to_file(filepath, data):
-    try:
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(data)
-        print(Colors.GREEN + f"\n[+] Saved to: {filepath}" + Colors.END)
-    except Exception as e:
-        print(Colors.RED + f"\n[!] Save error: {e}" + Colors.END)
+def save_to_file(filename_only, data):
+    # لیست مسیرهای احتمالی برای ذخیره‌سازی فایل در ترموکس و اندروید
+    possible_paths = [
+        os.path.join(DOWNLOAD_DIR, filename_only),
+        os.path.expanduser(f"~/storage/downloads/{filename_only}"),
+        os.path.expanduser(f"~/{filename_only}")
+    ]
+    
+    saved = False
+    for filepath in possible_paths:
+        try:
+            folder = os.path.dirname(filepath)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(data)
+            print(Colors.GREEN + f"\n[+] Saved to: {filepath}" + Colors.END)
+            saved = True
+            break
+        except Exception:
+            continue
+
+    if not saved:
+        print(Colors.RED + "\n[!] Save error: Could not write file. Run 'termux-setup-storage' in Termux." + Colors.END)
 
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
@@ -365,7 +380,6 @@ def build_separated_tables_message(working_results, title_msg, is_config=False):
     message_blocks = [f"📊 {title_msg}\n"]
     
     for country, items in country_groups.items():
-        # ساخت جدول یا کادر مجزا برای هر کشور
         table_border = "┌───────────────────────────────┐"
         table_footer = "└───────────────────────────────┘"
         
@@ -382,19 +396,19 @@ def build_separated_tables_message(working_results, title_msg, is_config=False):
 
     return "\n\n".join(message_blocks)
 
-def finalize_and_send(working_results, total_ips, title_msg, is_config=False):
+def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
     
     clean_ips_for_file = []
     for item in working_results:
         if is_config:
             ip, lat, country, cfg_str = item
-            clean_ips_for_file.append(ip)
+            clean_ips_for_file.append(cfg_str)
         else:
             target_str, lat, country = item
-            clean_ips_for_file.append(target_str.split(':')[0])
+            clean_ips_for_file.append(target_str)
 
-    save_to_file(SAVE_FILENAME, "\n".join(clean_ips_for_file))
+    save_to_file(save_filename, "\n".join(clean_ips_for_file))
     
     if working_results:
         separated_text = build_separated_tables_message(working_results, title_msg, is_config)
@@ -476,7 +490,7 @@ def menu_option_1():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, "Clean IPs Table")
+    finalize_and_send(working_results, total_ips, "Clean IPs Table", "تست_سلامت_ایپی.txt")
 
 def menu_option_2():
     print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
@@ -488,7 +502,7 @@ def menu_option_2():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'], is_port_scan=True
     )
-    finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table")
+    finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table", "تست_ایپی_و_پورت.txt")
 
 def menu_option_3():
     global stop_scan
@@ -526,14 +540,18 @@ def menu_option_3():
             print(Colors.YELLOW + "\n[!] Stopped by user. Saving working results..." + Colors.END)
 
     print("\n" + "-" * 65)
-    finalize_and_send(results, total_combinations, "Open Ports Table")
+    finalize_and_send(results, total_combinations, "Open Ports Table", "تست_پورت_خالی.txt")
 
 def menu_option_4():
     global stop_scan
     print(Colors.YELLOW + "\n[>] Option 4: Combine Config (Auto Send)" + Colors.END)
-    raw_config = input(Colors.BOLD + "Config (use YOUR_IP or address for replacement): " + Colors.END).strip()
+    raw_config = input(Colors.BOLD + "Enter Config: " + Colors.END).strip()
     if not raw_config: return
     
+    target_to_replace = input(Colors.BOLD + "Enter IP/Domain in config to replace (Default: YOUR_IP): " + Colors.END).strip()
+    if not target_to_replace:
+        target_to_replace = "YOUR_IP"
+
     try:
         manual_port = int(input(Colors.BOLD + "Enter target Port for config test (e.g. 443): " + Colors.END).strip() or 443)
     except:
@@ -554,9 +572,10 @@ def menu_option_4():
         lat = check_ip_http_latency(ip, port=manual_port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
         if lat is not None:
             country = get_ip_country(ip)
-            new_cfg = raw_config.replace("YOUR_IP", ip).replace("127.0.0.1", ip)
-            if ip not in new_cfg and manual_port != 443:
-                new_cfg = f"{new_cfg} (IP: {ip}:{manual_port})"
+            
+            # جایگزینی درست در متن کانفیگ
+            new_cfg = raw_config.replace(target_to_replace, ip).replace("127.0.0.1", ip)
+            
             with thread_lock:
                 working_results.append((ip, lat, country, new_cfg))
                 print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
@@ -575,7 +594,7 @@ def menu_option_4():
     print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
     
-    finalize_and_send(working_results, len(ips), "Config Combined Results Table", is_config=True)
+    finalize_and_send(working_results, len(ips), "Config Combined Results Table", "ترکیب_کانفیگ_با_ایپی.txt", is_config=True)
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
@@ -603,7 +622,7 @@ def menu_option_5_mahsa():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table")
+    finalize_and_send(working_results, total_ips, f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table", "مهسا_و_شیر_و_خورشید.txt")
 
 def menu_option_6_custom_scanner():
     current_custom = SCAN_SETTINGS.copy()
@@ -642,7 +661,7 @@ def menu_option_6_custom_scanner():
         current_custom['timeout'], current_custom['test_download'], 
         current_custom['path'], current_custom['workers']
     )
-    finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table")
+    finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table", "اسکن_ایپی_با_تنظیمات_خودت.txt")
 
 def main_menu():
     while True:
