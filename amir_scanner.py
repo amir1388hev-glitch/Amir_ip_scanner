@@ -56,7 +56,6 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-# پورت‌های TLS و Non-TLS
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
 NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
 PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
@@ -102,7 +101,7 @@ def send_to_telegram(text):
                     break
             except Exception:
                 if attempt == 2:
-                    print(Colors.RED + "[!] Failed to send to Telegram after 3 attempts." + Colors.END)
+                    print(Colors.RED + "[!] Failed to send to Telegram." + Colors.END)
 
 def send_to_rubika(text):
     if not RUBIKA_BOT_TOKEN or not RUBIKA_CHAT_ID:
@@ -121,7 +120,7 @@ def send_to_rubika(text):
                     break
             except Exception:
                 if attempt == 2:
-                    print(Colors.RED + "[!] Failed to send to Rubika after 3 attempts." + Colors.END)
+                    print(Colors.RED + "[!] Failed to send to Rubika." + Colors.END)
 
 def send_to_bale(text):
     if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
@@ -132,24 +131,17 @@ def send_to_bale(text):
     print(Colors.BLUE + "[*] Sending results to Bale..." + Colors.END)
     for chunk in chunks:
         payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
-        success = False
         for attempt in range(3):
             try:
                 res = requests.post(url, json=payload, timeout=15)
                 if res.status_code == 200:
                     print(Colors.GREEN + "[+] Successfully sent to Bale!" + Colors.END)
-                    success = True
                     break
             except Exception:
-                if attempt == 2:
-                    pass
-        if success:
-            print(Colors.GREEN + "پیام با موفقیت به بله ارسال شد." + Colors.END)
-        else:
-            print(Colors.RED + "ارسال پیام به بله با خطا مواجه شد و انجام نگرفت." + Colors.END)
+                if attempt == 2: pass
 
 def send_all(text):
-    full_text = f"{text}\n\n🔥 آی‌پی تمیز خدمت شما:\n\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂"
+    full_text = f"{text}\n\n🔥 آی‌پی تمیز خدمت شما:\n\nآیدی تلگرام: {TELEGRAM_ID}\nآیدی روبیکا: {RUBIKA_ID}"
     send_to_telegram(full_text)
     send_to_rubika(full_text)
     send_to_bale(full_text)
@@ -242,16 +234,13 @@ def parse_ip_input(user_input):
 
 def get_manual_ips():
     print(Colors.CYAN + "\nEnter IPs (single IP, range, CIDR, or multiline paste):" + Colors.END)
-    print(Colors.YELLOW + "Paste your IP list below, then press ENTER twice when finished:\n" + Colors.END)
     lines = []
     while True:
         try:
             line = input().strip()
             if not line:
-                if lines:
-                    break
-                else:
-                    return []
+                if lines: break
+                else: return []
             lines.append(line)
         except (KeyboardInterrupt, EOFError):
             break
@@ -340,14 +329,14 @@ def save_to_file(filename_only, data):
         except Exception:
             continue
     if not saved:
-        print(Colors.RED + "\n[!] Save error: Could not write file. Run 'termux-setup-storage' in Termux." + Colors.END)
+        print(Colors.RED + "\n[!] Save error: Could not write file." + Colors.END)
 
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
- ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.5 (7-Gate Hard Scan) {Colors.CYAN}    ║
+ ╠══════════════════════════════════════════════════════════════════╣
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.1.0 (Auto D1 Subscription Engine){Colors.CYAN} ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -447,20 +436,8 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
     return working_results, total_tasks
 
 # ==========================================
-# 🚀 AMIR CONFIG SPEED - (گزینه ۷)
+# 🚀 AMIR CONFIG SPEED - Fully Automated Option 7
 # ==========================================
-def print_option_7_header():
-    os.system("clear")
-    print(f"""{Colors.CYAN}{Colors.BOLD}
- ╔══════════════════════════════════════════════════════════════════════════════════╗
- ║                                                                                  ║
- ║                          AMIR CONFIG SPEED                                       ║
- ║                                                                                  ║
- ║               ⚡ High-Speed Cloudflare Subscription Engine ⚡                    ║
- ║                                                                                  ║
- ╚══════════════════════════════════════════════════════════════════════════════════╝{Colors.END}
-""")
-
 def get_cf_credentials():
     acc_id, token = "", ""
     if os.path.exists(CONFIG_FILE):
@@ -472,32 +449,33 @@ def get_cf_credentials():
         except: pass
 
     if acc_id and token:
-        print(Colors.GREEN + "  [✓] اطلاعات ذخیره‌شده کلودفلر یافت شد." + Colors.END)
-        use_saved = input(Colors.BOLD + "  👉 آیا از همین اطلاعات استفاده می‌کنید؟ (Y/n): " + Colors.END).strip().lower()
+        print(Colors.GREEN + "  [✓] Saved Cloudflare Credentials Found." + Colors.END)
+        use_saved = input(Colors.BOLD + "  👉 Use saved credentials? (Y/n): " + Colors.END).strip().lower()
         if use_saved != 'n':
             return acc_id, token
 
-    print(Colors.YELLOW + "\n  🔑 لطفاً کلیدهای اختصاصی کلودفلر خود را وارد کنید:\n" + Colors.END)
+    print(Colors.YELLOW + "\n  🔑 Please enter your Cloudflare Keys:\n" + Colors.END)
     acc_id = input(Colors.BOLD + "  1. Account ID: " + Colors.END).strip()
     token = input(Colors.BOLD + "  2. API Token : " + Colors.END).strip()
 
     if not acc_id or not token:
-        print(Colors.RED + "\n  ❌ Account ID و API Token الزامی هستند!" + Colors.END)
+        print(Colors.RED + "\n  ❌ Account ID and API Token are required!" + Colors.END)
         return None, None
 
-    save_opt = input(Colors.BOLD + "\n  💾 آیا این کلیدها ذخیره شوند؟ (Y/n): " + Colors.END).strip().lower()
+    save_opt = input(Colors.BOLD + "\n  💾 Save credentials on device? (Y/n): " + Colors.END).strip().lower()
     if save_opt != 'n':
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump({"account_id": acc_id, "api_token": token}, f)
-            print(Colors.GREEN + "  [✓] با موفقیت روی دستگاه ذخیره شد." + Colors.END)
+            print(Colors.GREEN + "  [✓] Successfully saved." + Colors.END)
         except Exception as e:
-            print(Colors.RED + f"  ⚠️ خطا در ذخیره‌سازی: {e}" + Colors.END)
+            print(Colors.RED + f"  ⚠️ Save error: {e}" + Colors.END)
 
     return acc_id, token
 
 def menu_option_7_subscription_builder():
-    print_option_7_header()
+    os.system("clear")
+    print_banner()
     account_id, api_token = get_cf_credentials()
     if not account_id or not api_token:
         return
@@ -508,22 +486,30 @@ def menu_option_7_subscription_builder():
     }
 
     db_name = "amir-db"
-    print(Colors.BLUE + "\n[+] در حال آماده‌سازی و بررسی دیتابیس D1..." + Colors.END)
+    print(Colors.BLUE + "\n[+] Checking Cloudflare D1 Databases..." + Colors.END)
     
     res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers)
     db_id = None
+    
     if res.status_code == 200:
-        for db in res.json().get("result", []):
+        databases = res.json().get("result", [])
+        for db in databases:
             if db.get("name") == db_name:
                 db_id = db.get("uuid")
-                print(Colors.GREEN + f"  [✓] دیتابیس اختصاصی '{db_name}' آماده است." + Colors.END)
+                print(Colors.GREEN + f"  [✓] Dedicated database '{db_name}' is ready." + Colors.END)
                 break
+        
+        # مدیریت خودکار سقف ۱۰ دیتابیس کلودفلر
+        if not db_id and len(databases) >= 10:
+            db_id = databases[0].get("uuid")
+            print(Colors.YELLOW + f"  [!] Account D1 limit reached (10 DBs). Using existing DB: '{databases[0].get('name')}'" + Colors.END)
+            
     elif res.status_code == 401:
-        print(Colors.RED + "  ❌ خطا: API Token وارد شده نامعتبر است!" + Colors.END)
+        print(Colors.RED + "  ❌ Error: Invalid API Token!" + Colors.END)
         return
 
     if not db_id:
-        print(Colors.YELLOW + "  [+] در حال ایجاد دیتابیس جدید D1..." + Colors.END)
+        print(Colors.YELLOW + "  [+] Creating new D1 database..." + Colors.END)
         create_res = requests.post(
             f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database",
             headers=headers,
@@ -531,43 +517,43 @@ def menu_option_7_subscription_builder():
         )
         if create_res.status_code == 200:
             db_id = create_res.json()["result"]["uuid"]
-            print(Colors.GREEN + f"  [✓] دیتابیس با موفقیت ایجاد شد." + Colors.END)
+            print(Colors.GREEN + f"  [✓] Database created successfully." + Colors.END)
         else:
-            print(Colors.RED + f"  ❌ خطا در ایحاد دیتابیس: {create_res.text}" + Colors.END)
+            print(Colors.RED + f"  ❌ Database error: {create_res.text}" + Colors.END)
             return
 
     print(Colors.CYAN + "\n" + "─"*65 + Colors.END)
-    print(Colors.BOLD + "📝 تنظیمات کانفیگ و لینک ساب‌سکرپشن" + Colors.END)
+    print(Colors.BOLD + "📝 Subscription Link Configuration" + Colors.END)
     print(Colors.CYAN + "─"*65 + Colors.END)
 
-    username = input(Colors.BOLD + "\n👤 نام کاربر (مثال: Amir_VIP): " + Colors.END).strip()
+    username = input(Colors.BOLD + "\n👤 Enter Username (e.g., Amir_VIP): " + Colors.END).strip()
     if not username:
-        print(Colors.RED + "❌ نام کاربر الزامی است!" + Colors.END)
+        print(Colors.RED + "❌ Username is required!" + Colors.END)
         return
 
-    print("\n🌐 انتخاب نوع پروتکل:")
-    print("  1) VLESS (پیش‌فرض)")
+    print("\n🌐 Select Protocol:")
+    print("  1) VLESS (Default)")
     print("  2) VMess")
-    print("  3) ترکیبی (VLESS + VMess)")
-    p_choice = input(Colors.BOLD + "👉 انتخاب (1-3): " + Colors.END).strip()
+    print("  3) Mixed (VLESS + VMess)")
+    p_choice = input(Colors.BOLD + "👉 Selection (1-3): " + Colors.END).strip()
     selected_proto = {"1": "VLESS", "2": "VMess", "3": "VLESS + VMess"}.get(p_choice, "VLESS")
 
-    cfg_count_in = input(Colors.BOLD + "\n🔢 تعداد کانفیگ داخل لینک ساب (پیش‌فرض 5): " + Colors.END).strip()
+    cfg_count_in = input(Colors.BOLD + "\n🔢 Config Count (Default 5): " + Colors.END).strip()
     config_count = int(cfg_count_in) if cfg_count_in.isdigit() else 5
 
-    vol_in = input(Colors.BOLD + "📊 محدودیت حجم (GB) [اینتر = نامحدود]: " + Colors.END).strip()
+    vol_in = input(Colors.BOLD + "📊 Volume Limit (GB) [Enter = Unlimited]: " + Colors.END).strip()
     volume_gb = float(vol_in) if vol_in else 0.0
 
-    exp_in = input(Colors.BOLD + "📅 مدت اعتبار به روز [اینتر = نامحدود]: " + Colors.END).strip()
+    exp_in = input(Colors.BOLD + "📅 Expiration Days [Enter = Unlimited]: " + Colors.END).strip()
     expire_days = int(exp_in) if exp_in.isdigit() else 0
 
-    ips_in = input(Colors.BOLD + "👥 سقف اتصال دستگاه‌های همزمان (پیش‌فرض 2): " + Colors.END).strip()
+    ips_in = input(Colors.BOLD + "👥 Max Device Limit (Default 2): " + Colors.END).strip()
     max_ips = int(ips_in) if ips_in.isdigit() else 2
 
     user_uuid = str(uuid.uuid4())
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # ساخت جدول و ثبت دیتابیس
+    # ساخت جدول و ثبت کاربر
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS users (
         username TEXT PRIMARY KEY, user_uuid TEXT, protocol TEXT,
@@ -587,44 +573,42 @@ def menu_option_7_subscription_builder():
     worker_sub_url = f"https://amir-vless-worker.workers.dev/sub/{username}"
     qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={worker_sub_url}"
 
-    vol_str = "نامحدود" if volume_gb == 0 else f"{volume_gb} GB"
-    exp_str = "نامحدود" if expire_days == 0 else f"{expire_days} روز"
+    vol_str = "Unlimited" if volume_gb == 0 else f"{volume_gb} GB"
+    exp_str = "Unlimited" if expire_days == 0 else f"{expire_days} Days"
 
     output_banner = f"""
 {Colors.CYAN}┌──────────────────────────────────────────────────────────────────┐
 │                         AMIR CONFIG SPEED                        │
 ├──────────────────────────────────────────────────────────────────┤{Colors.END}
-  👤 کاربر: {Colors.BOLD}{username}{Colors.END}
-  🌐 پروتکل: {Colors.GREEN}{selected_proto}{Colors.END}
-  🔢 تعداد کانفیگ: {Colors.YELLOW}{config_count} عدد{Colors.END}
-  📊 حجم اختصاصی: {Colors.CYAN}{vol_str}{Colors.END}
-  📅 مدت اعتبار: {Colors.CYAN}{exp_str}{Colors.END}
-  👥 سقف دستگاه همزمان: {Colors.MAGENTA}{max_ips} دستگاه{Colors.END}
-  🔑 UUID اختصاصی: {Colors.WHITE}{user_uuid}{Colors.END}
+  👤 User: {Colors.BOLD}{username}{Colors.END}
+  🌐 Protocol: {Colors.GREEN}{selected_proto}{Colors.END}
+  🔢 Config Count: {Colors.YELLOW}{config_count}{Colors.END}
+  📊 Volume: {Colors.CYAN}{vol_str}{Colors.END}
+  📅 Expiration: {Colors.CYAN}{exp_str}{Colors.END}
+  👥 Max Devices: {Colors.MAGENTA}{max_ips}{Colors.END}
+  🔑 UUID: {Colors.WHITE}{user_uuid}{Colors.END}
 {Colors.CYAN}├──────────────────────────────────────────────────────────────────┤{Colors.END}
-  🔗 🌍 **لینک ساب‌سکرپشن اختصاصی:**
+  🔗 **Subscription URL:**
   {Colors.GREEN}{worker_sub_url}{Colors.END}
 
-  📱 🏁 **QR Code لینک ساب:**
+  📱 **QR Code:**
   {Colors.BLUE}{qr_code_url}{Colors.END}
 {Colors.CYAN}└──────────────────────────────────────────────────────────────────┘{Colors.END}
 """
     print(output_banner)
 
-    # ارسال خودکار به پیام‌رسان‌های فعال
     send_all_sub_msg = (
-        f"⚡ <b>AMIR CONFIG SPEED - New Subscription</b>\n\n"
-        f"👤 کاربر: <b>{username}</b>\n"
-        f"🌐 پروتکل: <b>{selected_proto}</b>\n"
-        f"🔢 تعداد کانفیگ: <b>{config_count}</b>\n"
-        f"📊 حجم: <b>{vol_str}</b>\n"
-        f"📅 اعتبار: <b>{exp_str}</b>\n"
-        f"👥 سقف کاربر همزمان: <b>{max_ips}</b>\n\n"
-        f"🔗 <b>لینک ساب‌سکرپشن:</b>\n<code>{worker_sub_url}</code>\n\n"
-        f"📱 <b>QR Code:</b>\n{qr_code_url}"
+        f"⚡ AMIR CONFIG SPEED - Subscription Created\n\n"
+        f"👤 User: {username}\n"
+        f"🌐 Protocol: {selected_proto}\n"
+        f"🔢 Configs: {config_count}\n"
+        f"📊 Volume: {vol_str}\n"
+        f"📅 Expire: {exp_str}\n"
+        f"👥 Max Devices: {max_ips}\n\n"
+        f"🔗 Subscription Link:\n{worker_sub_url}\n\n"
+        f"📱 QR Code:\n{qr_code_url}"
     )
     send_all(send_all_sub_msg)
-
 
 def menu_option_1():
     print(Colors.YELLOW + "\n[>] Option 1: Test IP Health (Edge Speed Scanner)" + Colors.END)
