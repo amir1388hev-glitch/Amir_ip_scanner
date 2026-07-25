@@ -10,11 +10,12 @@ import sys
 import time
 import json
 import uuid
+import csv
+import random
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
-# غیرفعال کردن هشدار SSL
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -29,18 +30,20 @@ class Colors:
     BOLD = "\033[1m"
     END = "\033[0m"
 
+# ==================== مسیرها و تنظیمات ====================
 GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips"
-
 DOWNLOAD_DIR = "/sdcard/Download"
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
+TEST_RESULT_FILE = os.path.join(DOWNLOAD_DIR, "تست_سلامت_ایپی.txt")
+HTML_REPORT_FILE = os.path.join(DOWNLOAD_DIR, "scan_report.html")
+CSV_REPORT_FILE = os.path.join(DOWNLOAD_DIR, "scan_report.csv")
 CONFIG_FILE = os.path.expanduser("~/.cf_credentials.json")
 
+# ==================== تنظیمات ربات‌ها ====================
 RUBIKA_BOT_TOKEN = "CABGDG0AGFFRWJKSBWBUBRUGGFMYNFITBVVDKTSVBNOKZWANYOITFQILZSSLCRKT"
 RUBIKA_CHAT_ID = "g0ILUMK0562851bf38dfcd7703bdeb22"
-
 TELEGRAM_BOT_TOKEN = "8851868234:AAFHxnxQ8AnHubsHtx0fNYtZ4mdGdUyXIoI"
 TELEGRAM_CHAT_ID = "-1004437972136"
-
 BALE_BOT_TOKEN = "2690620:Nm1F_42X7P1ZMCg8VMMsQaMKDgDOEbSIvUk"
 BALE_CHAT_ID = "5495275998"
 
@@ -52,23 +55,18 @@ SCAN_SETTINGS = {
     "path": "/",
     "port": 443,
     "timeout": 3.0,
-    "workers": 20,
-    "test_download": True
+    "workers": 30,
+    "test_download": True,
+    "download_size_mb": 1.0,
+    "max_ips_limit": 5000
 }
 
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
 NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
-PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
 
-MAHSA_CDN_TYPES = {
-    "1": "Cloudflare CDN",
-    "2": "Akamai CDN",
-    "3": "Fastly CDN",
-    "4": "Bunny CDN",
-    "5": "Any CDN (Mixed)"
-}
+LAST_CLEAN_IPS = []
+stop_scan = False
 
-# کد جاوااسکریپت ورکر جهت دیپلوی خودکار
 WORKER_JS_CODE = """
 export default {
   async fetch(request, env) {
@@ -79,30 +77,34 @@ export default {
       const username = pathParts[1];
 
       try {
-        const { results } = await env.DB.prepare(
+        const { results: userResults } = await env.DB.prepare(
           "SELECT * FROM users WHERE username = ?"
         ).bind(username).all();
 
-        if (!results || results.length === 0) {
+        if (!userResults || userResults.length === 0) {
           return new Response("User not found", { status: 404 });
         }
+        const user = userResults[0];
 
-        const user = results[0];
+        const { results: ipResults } = await env.DB.prepare(
+          "SELECT ip_port FROM clean_ips ORDER BY latency ASC"
+        ).all();
 
-        const cleanIPs = [
-          "104.16.1.1:443",
-          "104.17.1.1:443",
-          "162.159.135.1:443",
-          "172.67.1.1:443"
-        ];
+        let cleanIPs = [];
+        if (ipResults && ipResults.length > 0) {
+          cleanIPs = ipResults.map(r => r.ip_port);
+        } else {
+          cleanIPs = ["104.16.51.89:443", "104.17.120.12:443", "162.159.138.4:443", "172.67.180.22:443"];
+        }
 
         let configs = [];
-        const count = Math.min(user.config_count || 5, cleanIPs.length);
-
-        for (let i = 0; i < count; i++) {
-          const [ip, port] = cleanIPs[i].split(':');
+        const requestedCount = user.config_count || 30;
+        
+        for (let i = 0; i < requestedCount; i++) {
+          const ipPort = cleanIPs[i % cleanIPs.length];
+          const [ip, port] = ipPort.split(':');
           const configName = `${user.username}-Node-${i + 1}`;
-          const vlessConfig = `vless://${user.user_uuid}@${ip}:${port}?encryption=none&security=tls&type=ws&host=${url.hostname}&path=%2F#${encodeURIComponent(configName)}`;
+          const vlessConfig = `vless://${user.user_uuid}@${ip}:${port || 443}?encryption=none&security=tls&type=ws&host=${url.hostname}&path=%2F#${encodeURIComponent(configName)}`;
           configs.push(vlessConfig);
         }
 
@@ -126,160 +128,87 @@ export default {
 };
 """
 
-stop_scan = False
+# ==================== سیستم ارسال پیام‌رسان‌ها ====================
+def send_to_telegram(text, file_path=None):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=5)
+        if file_path and os.path.exists(file_path):
+            doc_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+            with open(file_path, "rb") as f:
+                requests.post(doc_url, data={"chat_id": TELEGRAM_CHAT_ID}, files={"document": f}, timeout=10)
+    except Exception:
+        pass
 
+def send_to_rubika(text, file_path=None):
+    try:
+        url = f"https://botapi.rubika.ir/bot{RUBIKA_BOT_TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": RUBIKA_CHAT_ID, "text": text}, timeout=5)
+    except Exception:
+        pass
+
+def send_to_bale(text, file_path=None):
+    try:
+        url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": BALE_CHAT_ID, "text": text}, timeout=5)
+    except Exception:
+        pass
+
+def send_notifications_all(text, file_path=None):
+    send_to_telegram(text, file_path)
+    send_to_rubika(text, file_path)
+    send_to_bale(text, file_path)
+
+# ==================== توابع کمکی و شبکه ====================
 def get_ip_country(ip):
     try:
         res = requests.get(f"https://ipmyp.ir/api/ip/{ip}", timeout=3)
         data = res.json()
-        country = data.get("country") or data.get("country_name") or "Unknown"
-        return country
-    except:
+        return data.get("country") or data.get("country_name") or "Unknown"
+    except Exception:
         try:
             res = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=2)
-            data = res.json()
-            return data.get("country", "Unknown")
-        except:
+            return res.json().get("country", "Unknown")
+        except Exception:
             return "Unknown"
-
-def send_to_telegram(text):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    max_length = 4000
-    chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
-    print(Colors.BLUE + "\n[*] Sending results to Telegram..." + Colors.END)
-    for chunk in chunks:
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "disable_web_page_preview": True}
-        for attempt in range(3):
-            try:
-                res = requests.post(url, json=payload, timeout=15)
-                if res.status_code == 200:
-                    print(Colors.GREEN + "[+] Successfully sent to Telegram!" + Colors.END)
-                    break
-            except Exception:
-                if attempt == 2:
-                    print(Colors.RED + "[!] Failed to send to Telegram." + Colors.END)
-
-def send_to_rubika(text):
-    if not RUBIKA_BOT_TOKEN or not RUBIKA_CHAT_ID:
-        return
-    url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
-    max_length = 3500
-    chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
-    print(Colors.BLUE + "[*] Sending results to Rubika..." + Colors.END)
-    for chunk in chunks:
-        payload = {"chat_id": RUBIKA_CHAT_ID, "text": chunk}
-        for attempt in range(3):
-            try:
-                res = requests.post(url, json=payload, timeout=12)
-                if res.status_code == 200:
-                    print(Colors.GREEN + "[+] Successfully sent to Rubika!" + Colors.END)
-                    break
-            except Exception:
-                if attempt == 2:
-                    print(Colors.RED + "[!] Failed to send to Rubika." + Colors.END)
-
-def send_to_bale(text):
-    if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
-        return
-    url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
-    max_length = 4000
-    chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
-    print(Colors.BLUE + "[*] Sending results to Bale..." + Colors.END)
-    for chunk in chunks:
-        payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
-        for attempt in range(3):
-            try:
-                res = requests.post(url, json=payload, timeout=15)
-                if res.status_code == 200:
-                    print(Colors.GREEN + "[+] Successfully sent to Bale!" + Colors.END)
-                    break
-            except Exception:
-                if attempt == 2: pass
-
-def send_all(text):
-    full_text = f"{text}\n\n🔥 آی‌پی تمیز خدمت شما:\n\nآیدی تلگرام: {TELEGRAM_ID}\nآیدی روبیکا: {RUBIKA_ID}"
-    send_to_telegram(full_text)
-    send_to_rubika(full_text)
-    send_to_bale(full_text)
 
 def get_clean_input(prompt_text):
     try:
-        raw_val = input(prompt_text)
-        clean_val = re.sub(r"\D", "", raw_val)
-        return clean_val
+        return re.sub(r"\D", "", input(prompt_text))
     except (KeyboardInterrupt, EOFError):
-        print(Colors.YELLOW + "\n[*] Exiting..." + Colors.END)
         sys.exit(0)
-
-def get_ips_from_github(url):
-    try:
-        print(Colors.BLUE + "[*] Downloading IP list from GitHub..." + Colors.END)
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            lines = response.text.splitlines()
-            ips = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
-            print(Colors.GREEN + f"[+] Loaded {len(ips)} raw entries from GitHub." + Colors.END)
-            return parse_ip_input(",".join(ips))
-        else:
-            print(Colors.RED + f"[!] Download error: Status code {response.status_code}" + Colors.END)
-            return []
-    except Exception as e:
-        print(Colors.RED + f"[!] Error connecting to GitHub: {e}" + Colors.END)
-        return []
-
-def get_ips_from_local_file():
-    print(Colors.BLUE + f"[*] Reading IPs from local file: {LOCAL_ALL_IPS_FILE}" + Colors.END)
-    if os.path.exists(LOCAL_ALL_IPS_FILE):
-        try:
-            with open(LOCAL_ALL_IPS_FILE, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                raw_ips = []
-                for line in lines:
-                    clean_line = line.strip()
-                    if clean_line and not clean_line.startswith("#"):
-                        ip_part = clean_line.split()[0].split(":")[0]
-                        raw_ips.append(ip_part)
-                if raw_ips:
-                    ips = parse_ip_input(",".join(raw_ips))
-                    print(Colors.GREEN + f"[+] Loaded {len(ips)} IPs from local file." + Colors.END)
-                    return ips
-        except Exception as e:
-            print(Colors.RED + f"[!] Error reading file: {e}" + Colors.END)
-    else:
-        print(Colors.RED + f"[!] File not found: {LOCAL_ALL_IPS_FILE}" + Colors.END)
-    return []
 
 def parse_ip_input(user_input):
     ips = []
-    formatted_input = user_input.replace("\n", ",").replace("\r", ",")
-    entries = formatted_input.split(",")
+    entries = user_input.replace("\n", ",").replace("\r", ",").split(",")
     for entry in entries:
         entry = entry.strip()
         if not entry:
             continue
         if "/" in entry:
             try:
-                network = ipaddress.ip_network(entry, strict=False)
-                for ip in network.hosts():
+                net = ipaddress.ip_network(entry, strict=False)
+                hosts = list(net.hosts())
+                if len(hosts) > SCAN_SETTINGS["max_ips_limit"]:
+                    hosts = random.sample(hosts, SCAN_SETTINGS["max_ips_limit"])
+                for ip in hosts:
                     ips.append(str(ip))
             except Exception:
                 pass
         elif "-" in entry and "." in entry:
             try:
                 parts = entry.split("-")
-                start_ip = parts[0].strip()
+                start = ipaddress.ip_address(parts[0].strip())
                 end_ip = parts[1].strip()
                 if end_ip.count(".") == 0:
-                    start_parts = start_ip.split(".")
-                    end_ip = ".".join(start_parts[:3]) + "." + end_ip
-                start = ipaddress.ip_address(start_ip)
+                    end_ip = ".".join(parts[0].strip().split(".")[:3]) + "." + end_ip
                 end = ipaddress.ip_address(end_ip)
-                current = start
-                while current <= end:
-                    ips.append(str(current))
-                    current += 1
+                curr = start
+                count = 0
+                while curr <= end and count < SCAN_SETTINGS["max_ips_limit"]:
+                    ips.append(str(curr))
+                    curr += 1
+                    count += 1
             except Exception:
                 pass
         else:
@@ -290,40 +219,80 @@ def parse_ip_input(user_input):
                 pass
     return ips
 
-def get_manual_ips():
-    print(Colors.CYAN + "\nEnter IPs (single IP, range, CIDR, or multiline paste):" + Colors.END)
-    lines = []
-    while True:
+def get_ips_from_github(url):
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            lines = [l.strip() for l in res.text.splitlines() if l.strip() and not l.startswith("#")]
+            return parse_ip_input(",".join(lines))
+    except Exception:
+        pass
+    return []
+
+def get_ips_from_local_file():
+    if os.path.exists(LOCAL_ALL_IPS_FILE):
         try:
-            line = input().strip()
-            if not line:
-                if lines: break
-                else: return []
-            lines.append(line)
-        except (KeyboardInterrupt, EOFError):
-            break
-    user_input = ",".join(lines)
-    ips = parse_ip_input(user_input)
-    print(Colors.GREEN + f"[+] Expanded to {len(ips)} individual IPs." + Colors.END)
-    return ips
+            with open(LOCAL_ALL_IPS_FILE, "r", encoding="utf-8") as f:
+                raw_ips = [l.strip().split()[0].split(":")[0] for l in f if l.strip() and not l.startswith("#")]
+                return parse_ip_input(",".join(raw_ips))
+        except Exception:
+            pass
+    return []
 
 def select_ip_source():
-    print(Colors.CYAN + "\nSelect IP source:" + Colors.END)
-    print("1. GitHub (Online repository)")
-    print("2. Manual input (Type or paste)")
-    print("3. From local file in phone (/sdcard/Download/all_ips.txt)")
-
-    choice = get_clean_input(Colors.BOLD + "[>] Choose option (1/2/3): " + Colors.END)
-
+    print(Colors.CYAN + "\nانتخاب منبع آی‌پی:" + Colors.END)
+    print("1. ریپازیتوری آنلاین گیت‌هاب")
+    print("2. ورودی دستی (تک، CIDR یا رنج)")
+    print("3. فایل محلی (all_ips.txt)")
+    choice = get_clean_input(Colors.BOLD + "[>] گزینه‌ را انتخاب کنید (1/2/3): " + Colors.END)
     if choice == "1":
         return get_ips_from_github(GITHUB_IP_URL)
     elif choice == "2":
-        return get_manual_ips()
+        lines = []
+        print(Colors.CYAN + "آی‌پی‌ها را وارد کرده و در انتها دو بار Enter بزنید:" + Colors.END)
+        while True:
+            l = input().strip()
+            if not l:
+                break
+            lines.append(l)
+        return parse_ip_input(",".join(lines))
     elif choice == "3":
         return get_ips_from_local_file()
-    else:
-        print(Colors.RED + "[!] Invalid choice selected." + Colors.END)
-        return []
+    return []
+
+# ==================== موتور اسکن و تست سرعت دانلود ====================
+def test_real_download_speed(ip, port, domain):
+    try:
+        start = time.time()
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3.0)
+        sock.connect((ip, port))
+        
+        tls_sock = ctx.wrap_socket(sock, server_hostname=domain)
+        req = f"GET /__down?bytes=1048576 HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+        tls_sock.sendall(req.encode())
+        
+        total_downloaded = 0
+        while True:
+            data = tls_sock.recv(16384)
+            if not data:
+                break
+            total_downloaded += len(data)
+            if total_downloaded >= 1048576:
+                break
+        
+        tls_sock.close()
+        elapsed = time.time() - start
+        if elapsed > 0 and total_downloaded > 0:
+            speed_mbps = (total_downloaded * 8) / (elapsed * 1024 * 1024)
+            return round(speed_mbps, 2)
+    except Exception:
+        pass
+    return 0.0
 
 def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_download=True, path="/"):
     for attempt in range(2):
@@ -332,580 +301,374 @@ def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
             sock.connect((ip, port))
-            
             if port in NON_TLS_PORTS:
-                request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
-                sock.sendall(request_data.encode())
-                response = sock.recv(1024)
+                req = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+                sock.sendall(req.encode())
+                res = sock.recv(1024)
                 sock.close()
-                if not response: continue
+                if not res:
+                    continue
             else:
-                context = ssl.create_default_context()
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-                tls_sock = context.wrap_socket(sock, server_hostname=domain)
-                request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
-                tls_sock.sendall(request_data.encode())
-                response = tls_sock.recv(1024)
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                tls_sock = ctx.wrap_socket(sock, server_hostname=domain)
+                req = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+                tls_sock.sendall(req.encode())
+                res = tls_sock.recv(1024)
                 tls_sock.close()
-                if not response: continue
-
-            latency = (time.time() - start_time) * 1000
-            return round(latency, 1)
-        except Exception:
-            if attempt == 1: return None
-    return None
-
-def check_ip_port_connection(ip, port, timeout=2.0):
-    for attempt in range(2):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            result = sock.connect_ex((ip, port))
-            sock.close()
-            if result == 0: return True
-        except Exception:
-            if attempt == 1: return False
-    return False
-
-def save_to_file(filename_only, data):
-    possible_paths = [
-        os.path.join(DOWNLOAD_DIR, filename_only),
-        os.path.expanduser(f"~/storage/downloads/{filename_only}"),
-        os.path.expanduser(f"~/{filename_only}")
-    ]
-    saved = False
-    for filepath in possible_paths:
-        try:
-            folder = os.path.dirname(filepath)
-            if folder: os.makedirs(folder, exist_ok=True)
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(data)
-            print(Colors.GREEN + f"\n[+] Saved to: {filepath}" + Colors.END)
-            saved = True
-            break
-        except Exception:
-            continue
-    if not saved:
-        print(Colors.RED + "\n[!] Save error: Could not write file." + Colors.END)
-
-def print_banner():
-    banner = f"""{Colors.CYAN}{Colors.BOLD}
- ╔══════════════════════════════════════════════════════════════════╗
- ║                        AMIR SCANNER PRO                          ║
- ╠══════════════════════════════════════════════════════════════════╣
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.5.0 (Full Auto-Deploy Worker Engine){Colors.CYAN} ║
- ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
- ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
- ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
-"""
-    print(banner)
-
-def get_cf_credentials():
-    acc_id, token = "", ""
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                acc_id = data.get("account_id", "")
-                token = data.get("api_token", "")
-        except: pass
-
-    if acc_id and token:
-        print(Colors.GREEN + "  [✓] Saved Cloudflare Credentials Found." + Colors.END)
-        use_saved = input(Colors.BOLD + "  👉 Use saved credentials? (Y/n): " + Colors.END).strip().lower()
-        if use_saved != 'n':
-            return acc_id, token
-
-    print(Colors.YELLOW + "\n  🔑 Please enter your Cloudflare Keys:\n" + Colors.END)
-    acc_id = input(Colors.BOLD + "  1. Account ID: " + Colors.END).strip()
-    token = input(Colors.BOLD + "  2. API Token : " + Colors.END).strip()
-
-    if not acc_id or not token:
-        print(Colors.RED + "\n  ❌ Account ID and API Token are required!" + Colors.END)
-        return None, None
-
-    save_opt = input(Colors.BOLD + "\n  💾 Save credentials on device? (Y/n): " + Colors.END).strip().lower()
-    if save_opt != 'n':
-        try:
-            with open(CONFIG_FILE, "w") as f:
-                json.dump({"account_id": acc_id, "api_token": token}, f)
-            print(Colors.GREEN + "  [✓] Successfully saved." + Colors.END)
-        except Exception as e:
-            print(Colors.RED + f"  ⚠️ Save error: {e}" + Colors.END)
-
-    return acc_id, token
-
-def deploy_worker_automatically(account_id, api_token, db_id, worker_name="amir-sub"):
-    """دیپلوی کامل و خودکار کد جاوااسکریپت و متصل کردن دیتابیس D1"""
-    headers = {
-        "Authorization": f"Bearer {api_token}"
-    }
-    
-    # ۱. دریافت ساب‌دامنه Workers کاربر
-    subdomain_res = requests.get(
-        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/subdomain",
-        headers=headers
-    )
-    subdomain = ""
-    if subdomain_res.status_code == 200:
-        subdomain = subdomain_res.json().get("result", {}).get("subdomain", "")
-
-    if not subdomain:
-        print(Colors.YELLOW + "  [!] Workers Subdomain not initialized. Enabling..." + Colors.END)
-        # ثبت دامنه پیش‌فرض در صورت عدم وجود
-        init_sub_res = requests.put(
-            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/subdomain",
-            headers=headers,
-            json={"subdomain": f"amir-sub-{account_id[:6]}"}
-        )
-        if init_sub_res.status_code == 200:
-            subdomain = init_sub_res.json().get("result", {}).get("subdomain", "")
-
-    print(Colors.BLUE + f"  [*] Deploying JavaScript Worker '{worker_name}'..." + Colors.END)
-
-    metadata = {
-        "main_module": "worker.js",
-        "bindings": [
-            {
-                "name": "DB",
-                "type": "d1",
-                "id": db_id
-            }
-        ]
-    }
-
-    files = {
-        "metadata": ("metadata.json", json.dumps(metadata), "application/json"),
-        "worker.js": ("worker.js", WORKER_JS_CODE, "application/javascript+module")
-    }
-
-    deploy_res = requests.put(
-        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/scripts/{worker_name}",
-        headers=headers,
-        files=files
-    )
-
-    if deploy_res.status_code == 200:
-        # فعال‌سازی مسیر subdomain روی ورکر
-        requests.post(
-            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/scripts/{worker_name}/subdomain",
-            headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
-            json={"enabled": True}
-        )
-        full_worker_url = f"https://{worker_name}.{subdomain}.workers.dev"
-        print(Colors.GREEN + f"  [✓] Worker successfully deployed & D1 bound! URL: {full_worker_url}" + Colors.END)
-        return full_worker_url
-    else:
-        print(Colors.RED + f"  ❌ Worker Deploy Error: {deploy_res.text}" + Colors.END)
-        return None
-
-def menu_option_7_subscription_builder():
-    os.system("clear")
-    print_banner()
-    account_id, api_token = get_cf_credentials()
-    if not account_id or not api_token:
-        return
-
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
-
-    db_name = "amir-db"
-    print(Colors.BLUE + "\n[+] Checking Cloudflare D1 Databases..." + Colors.END)
-    
-    res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers)
-    db_id = None
-    
-    if res.status_code == 200:
-        databases = res.json().get("result", [])
-        for db in databases:
-            if db.get("name") == db_name:
-                db_id = db.get("uuid")
-                print(Colors.GREEN + f"  [✓] Dedicated database '{db_name}' is ready." + Colors.END)
-                break
-        
-        if not db_id and len(databases) >= 10:
-            db_id = databases[0].get("uuid")
-            print(Colors.YELLOW + f"  [!] D1 Limit reached. Using DB: '{databases[0].get('name')}'" + Colors.END)
+                if not res:
+                    continue
             
-    elif res.status_code == 401:
-        print(Colors.RED + "  ❌ Error: Invalid API Token!" + Colors.END)
-        return
+            latency = round((time.time() - start_time) * 1000, 1)
+            download_speed = 0.0
+            if test_download and port in TLS_PORTS:
+                download_speed = test_real_download_speed(ip, port, domain)
+            
+            return latency, download_speed
+        except Exception:
+            if attempt == 1:
+                return None, 0.0
+    return None, 0.0
 
-    if not db_id:
-        print(Colors.YELLOW + "  [+] Creating new D1 database..." + Colors.END)
-        create_res = requests.post(
-            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database",
-            headers=headers,
-            json={"name": db_name}
-        )
-        if create_res.status_code == 200:
-            db_id = create_res.json()["result"]["uuid"]
-            print(Colors.GREEN + f"  [✓] Database created successfully." + Colors.END)
-        else:
-            print(Colors.RED + f"  ❌ Database error: {create_res.text}" + Colors.END)
-            return
+def export_reports(results, port):
+    # ذخیره‌سازی فایل متنی اصلی
+    try:
+        with open(TEST_RESULT_FILE, "w", encoding="utf-8") as f:
+            for item in results:
+                f.write(f"{item[0]}:{port}\n")
+    except Exception:
+        pass
 
-    # دیپلوی اتوماتیک ورکر جاوااسکریپت
-    worker_url = deploy_worker_automatically(account_id, api_token, db_id)
-    if not worker_url:
-        print(Colors.RED + "❌ Could not setup worker properly. Aborting." + Colors.END)
-        return
+    # ذخیره‌سازی CSV
+    try:
+        with open(CSV_REPORT_FILE, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["IP", "Port", "Latency (ms)", "Speed (Mbps)", "Country"])
+            for item in results:
+                writer.writerow([item[0], port, item[1], item[2], item[3]])
+    except Exception:
+        pass
 
-    print(Colors.CYAN + "\n" + "─"*65 + Colors.END)
-    print(Colors.BOLD + "📝 Subscription Link Configuration" + Colors.END)
-    print(Colors.CYAN + "─"*65 + Colors.END)
+    # ذخیره‌سازی HTML
+    try:
+        html_content = f"""<html><head><title>AMIR Scan Report</title>
+        <style>body{{font-family:Tahoma;background:#1e1e1e;color:#fff;padding:20px;}}
+        table{{width:100%;border-collapse:collapse;margin-top:20px;}}
+        th,td{{border:1px solid #444;padding:10px;text-align:center;}}
+        th{{background:#333;color:#00ffcc;}} tr:nth-child(even){{background:#2a2a2a;}}</style>
+        </head><body><h2>نتایج اسکن آی‌پی کلودفلر</h2>
+        <p>تاريخ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        <table><tr><th>آی‌پی</th><th>پورت</th><th>تأخیر (ms)</th><th>سرعت (Mbps)</th><th>کشور</th></tr>"""
+        for item in results:
+            html_content += f"<tr><td>{item[0]}</td><td>{port}</td><td>{item[1]}</td><td>{item[2]}</td><td>{item[3]}</td></tr>"
+        html_content += "</table></body></html>"
+        with open(HTML_REPORT_FILE, "w", encoding="utf-8") as f:
+            f.write(html_content)
+    except Exception:
+        pass
 
-    username = input(Colors.BOLD + "\n👤 Enter Username (e.g., Amir_VIP): " + Colors.END).strip()
-    if not username:
-        print(Colors.RED + "❌ Username is required!" + Colors.END)
-        return
-
-    print("\n🌐 Select Protocol:")
-    print("  1) VLESS (Default)")
-    print("  2) VMess")
-    print("  3) Mixed (VLESS + VMess)")
-    p_choice = input(Colors.BOLD + "👉 Selection (1-3): " + Colors.END).strip()
-    selected_proto = {"1": "VLESS", "2": "VMess", "3": "VLESS + VMess"}.get(p_choice, "VLESS")
-
-    cfg_count_in = input(Colors.BOLD + "\n🔢 Config Count (Default 5): " + Colors.END).strip()
-    config_count = int(cfg_count_in) if cfg_count_in.isdigit() else 5
-
-    vol_in = input(Colors.BOLD + "📊 Volume Limit (GB) [Enter = Unlimited]: " + Colors.END).strip()
-    volume_gb = float(vol_in) if vol_in else 0.0
-
-    exp_in = input(Colors.BOLD + "📅 Expiration Days [Enter = Unlimited]: " + Colors.END).strip()
-    expire_days = int(exp_in) if exp_in.isdigit() else 0
-
-    ips_in = input(Colors.BOLD + "👥 Max Device Limit (Default 2): " + Colors.END).strip()
-    max_ips = int(ips_in) if ips_in.isdigit() else 2
-
-    user_uuid = str(uuid.uuid4())
-    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # ساخت جدول و ثبت کاربر در D1
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY, user_uuid TEXT, protocol TEXT,
-        config_count INTEGER, volume_gb REAL, expire_days INTEGER,
-        max_ips INTEGER, created_at TEXT
-    );
-    """
-    requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": create_table_sql})
-
-    insert_sql = "INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?, ?, ?, ?);"
-    requests.post(
-        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
-        headers=headers,
-        json={"sql": insert_sql, "params": [username, user_uuid, selected_proto, config_count, volume_gb, expire_days, max_ips, created_at]}
-    )
-
-    worker_sub_url = f"{worker_url}/sub/{username}"
-    qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={worker_sub_url}"
-
-    vol_str = "Unlimited" if volume_gb == 0 else f"{volume_gb} GB"
-    exp_str = "Unlimited" if expire_days == 0 else f"{expire_days} Days"
-
-    output_banner = f"""
-{Colors.CYAN}┌──────────────────────────────────────────────────────────────────┐
-│                         AMIR CONFIG SPEED                        │
-├──────────────────────────────────────────────────────────────────┤{Colors.END}
-  👤 User: {Colors.BOLD}{username}{Colors.END}
-  🌐 Protocol: {Colors.GREEN}{selected_proto}{Colors.END}
-  🔢 Config Count: {Colors.YELLOW}{config_count}{Colors.END}
-  📊 Volume: {Colors.CYAN}{vol_str}{Colors.END}
-  📅 Expiration: {Colors.CYAN}{exp_str}{Colors.END}
-  👥 Max Devices: {Colors.MAGENTA}{max_ips}{Colors.END}
-  🔑 UUID: {Colors.WHITE}{user_uuid}{Colors.END}
-{Colors.CYAN}├──────────────────────────────────────────────────────────────────┤{Colors.END}
-  🔗 **Subscription URL:**
-  {Colors.GREEN}{worker_sub_url}{Colors.END}
-
-  📱 **QR Code:**
-  {Colors.BLUE}{qr_code_url}{Colors.END}
-{Colors.CYAN}└──────────────────────────────────────────────────────────────────┘{Colors.END}
-"""
-    print(output_banner)
-
-    send_all_sub_msg = (
-        f"⚡ AMIR CONFIG SPEED - Subscription Created\n\n"
-        f"👤 User: {username}\n"
-        f"🌐 Protocol: {selected_proto}\n"
-        f"🔢 Configs: {config_count}\n"
-        f"📊 Volume: {vol_str}\n"
-        f"📅 Expire: {exp_str}\n"
-        f"👥 Max Devices: {max_ips}\n\n"
-        f"🔗 Subscription Link:\n{worker_sub_url}\n\n"
-        f"📱 QR Code:\n{qr_code_url}"
-    )
-    send_all(send_all_sub_msg)
-
-def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
-    global stop_scan
+def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers):
+    global stop_scan, LAST_CLEAN_IPS
     stop_scan = False
     working_results = []
     import threading
     thread_lock = threading.Lock()
 
-    tasks = extra_tasks if extra_tasks else ([(ip, p) for ip in ips for p in PORTS_TO_TEST] if is_port_scan else ips)
-    total_tasks = len(tasks)
-    print(Colors.BLUE + f"\n[*] Scanning {total_tasks} items using {workers} parallel workers...\n" + Colors.END)
+    print(Colors.BLUE + f"\n[*] در حال اسکن {len(ips)} آی‌پی روی پورت {port}..." + Colors.END)
 
-    def worker_task(item):
-        if stop_scan: return None
-        if is_port_scan:
-            ip, p = item
-            lat = check_ip_http_latency(ip, port=p, domain=domain, timeout=timeout, test_download=test_download, path=path)
-            if lat is not None:
-                country = get_ip_country(ip)
-                res_str = f"{ip}:{p}"
-                with thread_lock:
-                    working_results.append((res_str, lat, country))
-                    print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
-                return True
-        else:
-            ip = item
-            lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
-            if lat is not None:
-                country = get_ip_country(ip)
-                with thread_lock:
-                    working_results.append((ip, lat, country))
-                    print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
-                return True
-        return None
+    def worker_task(ip):
+        if stop_scan:
+            return
+        lat, speed = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
+        if lat is not None:
+            country = get_ip_country(ip)
+            with thread_lock:
+                working_results.append((ip, lat, speed, country))
+                speed_str = f"{speed} Mbps" if speed > 0 else "N/A"
+                print(f"{ip:<18} | {str(lat)+'ms':<8} | {speed_str:<10} | {country:<12} | {Colors.GREEN}[OK]{Colors.END}")
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
-            futures = [executor.submit(worker_task, item) for item in tasks]
-            for future in as_completed(futures):
-                if stop_scan: break
+            futures = [executor.submit(worker_task, ip) for ip in ips]
+            for f in as_completed(futures):
+                if stop_scan:
+                    break
         except KeyboardInterrupt:
             stop_scan = True
-            print(Colors.YELLOW + "\n[!] Scan stopped by user." + Colors.END)
 
-    print("\n" + "-" * 65)
-    return working_results, total_tasks
-
-def build_separated_tables_message(working_results, title_msg, is_config=False):
-    country_groups = {}
-    for item in working_results:
-        if is_config:
-            ip, lat, country, cfg_str = item
-            key_val = cfg_str
-        else:
-            target_str, lat, country = item
-            key_val = target_str
-
-        if country not in country_groups:
-            country_groups[country] = []
-        country_groups[country].append(key_val)
-
-    message_blocks = [f"📊 {title_msg}\n"]
-    for country, items in country_groups.items():
-        table_border = "┌───────────────────────────────┐"
-        table_footer = "└───────────────────────────────┘"
-        block_lines = [
-            table_border,
-            f"🏴 کشور: {country} ({len(items)} عدد)",
-            "├───────────────────────────────┤"
-        ]
-        for val in items: block_lines.append(f" {val}")
-        block_lines.append(table_footer)
-        message_blocks.append("\n".join(block_lines))
-
-    return "\n\n".join(message_blocks)
-
-def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
-    clean_ips_for_file = []
-    for item in working_results:
-        if is_config:
-            ip, lat, country, cfg_str = item
-            clean_ips_for_file.append(cfg_str)
-        else:
-            target_str, lat, country = item
-            clean_ips_for_file.append(target_str)
+    LAST_CLEAN_IPS = working_results
 
-    save_to_file(save_filename, "\n".join(clean_ips_for_file))
+    export_reports(working_results, port)
+
     if working_results:
-        separated_text = build_separated_tables_message(working_results, title_msg, is_config)
-        send_all(separated_text)
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
+        msg = f"🚀 اسکن جدید تکمیل شد\nتعداد آی‌پی سالم: {len(working_results)}\nبهترین تأخیر: {working_results[0][1]}ms"
+        send_notifications_all(msg, TEST_RESULT_FILE)
 
+    return working_results, len(ips)
+
+# ==================== مدیریت ورکر و D1 کلودفلر ====================
+def print_banner():
+    print(f"""{Colors.CYAN}{Colors.BOLD}
+ ╔══════════════════════════════════════════════════════════════════╗
+ ║                        AMIR SCANNER PRO                          ║
+ ╠══════════════════════════════════════════════════════════════════╣
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.8.0 (Full 800-Line Core Edition){Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
+ ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
+ ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
+""")
+
+def get_cf_credentials():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                if data.get("account_id") and data.get("api_token"):
+                    use_saved = input(Colors.BOLD + "👉 استفاده از کلیدهای ذخیره‌شده کلودفلر؟ (Y/n): " + Colors.END).strip().lower()
+                    if use_saved != 'n':
+                        return data["account_id"], data["api_token"]
+        except Exception:
+            pass
+
+    acc_id = input(Colors.BOLD + "1. Cloudflare Account ID: " + Colors.END).strip()
+    token = input(Colors.BOLD + "2. Cloudflare API Token: " + Colors.END).strip()
+    if acc_id and token:
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                json.dump({"account_id": acc_id, "api_token": token}, f)
+        except Exception:
+            pass
+    return acc_id, token
+
+def deploy_worker_automatically(account_id, api_token, db_id, worker_name="amir-sub"):
+    headers = {"Authorization": f"Bearer {api_token}"}
+    subdomain_res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/subdomain", headers=headers)
+    subdomain = subdomain_res.json().get("result", {}).get("subdomain", "") if subdomain_res.status_code == 200 else ""
+
+    if not subdomain:
+        init_sub = requests.put(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/subdomain", headers=headers, json={"subdomain": f"amir-sub-{account_id[:6]}"})
+        if init_sub.status_code == 200:
+            subdomain = init_sub.json().get("result", {}).get("subdomain", "")
+
+    metadata = {"main_module": "worker.js", "bindings": [{"name": "DB", "type": "d1", "id": db_id}]}
+    files = {
+        "metadata": ("metadata.json", json.dumps(metadata), "application/json"),
+        "worker.js": ("worker.js", WORKER_JS_CODE, "application/javascript+module")
+    }
+
+    deploy_res = requests.put(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/scripts/{worker_name}", headers=headers, files=files)
+    if deploy_res.status_code == 200:
+        requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/scripts/{worker_name}/subdomain", headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}, json={"enabled": True})
+        return f"https://{worker_name}.{subdomain}.workers.dev"
+    return None
+
+def sync_clean_ips_to_d1(account_id, api_token, db_id, clean_results):
+    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+    
+    requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
+        headers=headers,
+        json={"sql": "CREATE TABLE IF NOT EXISTS clean_ips (ip_port TEXT PRIMARY KEY, latency REAL);"}
+    )
+
+    requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
+        headers=headers,
+        json={"sql": "DELETE FROM clean_ips;"}
+    )
+
+    for item in clean_results:
+        ip_val = item[0] if isinstance(item, (list, tuple)) else str(item)
+        lat_val = item[1] if isinstance(item, (list, tuple)) and len(item) > 1 else 100
+        ip_port = ip_val if ":" in ip_val else f"{ip_val}:443"
+        
+        requests.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
+            headers=headers,
+            json={"sql": "INSERT OR REPLACE INTO clean_ips VALUES (?, ?);", "params": [ip_port, lat_val]}
+        )
+    print(Colors.GREEN + f"  [✓] تعداد {len(clean_results)} آی‌پی به دیتابیس کلودفلر منتقل شد." + Colors.END)
+
+def load_clean_ips_from_file():
+    clean_ips = []
+    if os.path.exists(TEST_RESULT_FILE):
+        try:
+            with open(TEST_RESULT_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    ip_part = line.split()[0]
+                    clean_ips.append(ip_part)
+            print(Colors.GREEN + f"  [✓] تعداد {len(clean_ips)} آی‌پی از 'تست_سلامت_ایپی.txt' فراخوانی شد." + Colors.END)
+        except Exception as e:
+            print(Colors.RED + f"  [!] خطا در خواندن فایل: {e}" + Colors.END)
+    else:
+        print(Colors.YELLOW + "  [!] فایل 'تست_سلامت_ایپی.txt' در پوشه Download یافت نشد!" + Colors.END)
+    return clean_ips
+
+# ==================== منوها و زیرمنوها ====================
 def menu_option_1():
-    print(Colors.YELLOW + "\n[>] Option 1: Test IP Health (Edge Speed Scanner)" + Colors.END)
     ips = select_ip_source()
     if not ips: return
-    working_results, total_ips = run_scanner_engine(
-        ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
-        SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
-        SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
-    )
-    finalize_and_send(working_results, total_ips, "Clean IPs Table", "تست_سلامت_ایپی.txt")
+    results, total = run_scanner_engine(ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'])
+    print(Colors.GREEN + f"\n[✓] اسکن تکمیل شد ({len(results)} آی‌پی سالم)." + Colors.END)
 
 def menu_option_2():
-    print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
     ips = select_ip_source()
     if not ips: return
-    working_results, total_ips = run_scanner_engine(
-        ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
-        SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
-        SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'], is_port_scan=True
-    )
-    finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table", "تست_ایپی_و_پورت.txt")
+    p = input(Colors.BOLD + "پورت TLS را وارد کنید (مثلاً 8443): " + Colors.END).strip()
+    port = int(p) if p.isdigit() else 8443
+    run_scanner_engine(ips, port, SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'])
 
 def menu_option_3():
-    global stop_scan
-    print(Colors.YELLOW + "\n[>] Option 3: Test TCP PORT Only" + Colors.END)
     ips = select_ip_source()
     if not ips: return
-    tasks_list = [(ip, port) for ip in ips for port in PORTS_TO_TEST]
-    results = []
-    import threading
-    thread_lock = threading.Lock()
+    p = input(Colors.BOLD + "پورت HTTP را وارد کنید (مثلاً 80): " + Colors.END).strip()
+    port = int(p) if p.isdigit() else 80
+    run_scanner_engine(ips, port, SCAN_SETTINGS['domain'], SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'])
 
-    print(Colors.BLUE + f"\n[*] Testing TCP connection on {len(tasks_list)} combinations...\n" + Colors.END)
+def menu_option_settings():
+    print(Colors.CYAN + "\n--- تنظیمات پیشرفته اسکنر ---" + Colors.END)
+    d = input(f"دامنه اصلی ({SCAN_SETTINGS['domain']}): ").strip()
+    if d: SCAN_SETTINGS['domain'] = d
+    w = input(f"تعداد پردازش‌های همزمان/Thread ({SCAN_SETTINGS['workers']}): ").strip()
+    if w.isdigit(): SCAN_SETTINGS['workers'] = int(w)
+    t = input(f"تایم‌اوت اتصالات ({SCAN_SETTINGS['timeout']}): ").strip()
+    try: SCAN_SETTINGS['timeout'] = float(t)
+    except Exception: pass
+    dl = input(f"تست واقعی سرعت دانلود انجام شود؟ (y/n) [{SCAN_SETTINGS['test_download']}]: ").strip().lower()
+    if dl in ['y', 'n']: SCAN_SETTINGS['test_download'] = (dl == 'y')
 
-    def worker_task(item):
-        if stop_scan: return
-        ip, port = item
-        connected = check_ip_port_connection(ip, port, timeout=2.0)
-        res_str = f"{ip}:{port}"
-        if connected:
-            country = get_ip_country(ip)
-            with thread_lock:
-                results.append((res_str, 0, country))
-                print(f"{res_str:<22} | Country: {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}")
-
-    with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
-        try:
-            futures = [executor.submit(worker_task, t) for t in tasks_list]
-            for f in as_completed(futures):
-                if stop_scan: break
-        except KeyboardInterrupt:
-            stop_scan = True
-
-    finalize_and_send(results, len(tasks_list), "Open Ports Table", "تست_پورت_خالی.txt")
-
-def menu_option_4():
-    global stop_scan
-    print(Colors.YELLOW + "\n[>] Option 4: Smart Config Combiner (Direct IP)" + Colors.END)
-    raw_config = input(Colors.BOLD + "Enter Raw Config: " + Colors.END).strip()
-    if not raw_config: return
-    target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
-    if not target_ip: return
-    port_input = input(Colors.BOLD + "Enter Port (Leave empty for ALL ports): " + Colors.END).strip()
+def menu_manage_d1_users():
+    account_id, api_token = get_cf_credentials()
+    if not account_id or not api_token: return
+    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
     
-    ports_to_check = [int(port_input)] if port_input.isdigit() else PORTS_TO_TEST
-    ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
-    found_ips = re.findall(ip_pattern, raw_config)
-    old_ip = found_ips[0] if found_ips else None
+    db_name = "amir-db"
+    res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers)
+    db_id = None
+    if res.status_code == 200:
+        for db in res.json().get("result", []):
+            if db.get("name") == db_name:
+                db_id = db.get("uuid")
+                break
+    
+    if not db_id:
+        print(Colors.RED + "❌ دیتابیس D1 پیدا نشد!" + Colors.END)
+        return
 
-    working_results = []
-    import threading
-    thread_lock = threading.Lock()
+    print(Colors.CYAN + "\n--- مدیریت کاربران در D1 ---" + Colors.END)
+    print("1. لیست کاربران")
+    print("2. حذف کاربر")
+    opt = get_clean_input("[>] انتخاب کنید: ")
+    
+    if opt == "1":
+        query_res = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": "SELECT username, config_count, created_at FROM users;"})
+        if query_res.status_code == 200:
+            rows = query_res.json()["result"][0]["results"]
+            print(Colors.YELLOW + f"\n{'نام کاربر':<15} | {'تعداد کانفیگ':<12} | {'تاریخ ساخت':<20}" + Colors.END)
+            print("-" * 50)
+            for r in rows:
+                print(f"{r.get('username',''):<15} | {r.get('config_count',0):<12} | {r.get('created_at',''):<20}")
+    elif opt == "2":
+        u_del = input("نام کاربر جهت حذف: ").strip()
+        if u_del:
+            requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query", headers=headers, json={"sql": "DELETE FROM users WHERE username = ?;", "params": [u_del]})
+            print(Colors.GREEN + f"کاربر {u_del} با موفقیت حذف شد." + Colors.END)
 
-    def worker_task(p):
-        if stop_scan: return
-        lat = check_ip_http_latency(target_ip, port=p, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
-        if lat is not None:
-            country = get_ip_country(target_ip)
-            new_cfg = raw_config.replace(old_ip, target_ip) if old_ip else raw_config
-            new_cfg = re.sub(rf"({re.escape(target_ip)}):(\d+)", rf"\1:{p}", new_cfg)
-            if f":{p}" not in new_cfg and old_ip:
-                new_cfg = re.sub(r':\d+', f':{p}', new_cfg, count=1)
+def menu_option_7_subscription_builder():
+    global LAST_CLEAN_IPS
+    os.system("clear")
+    print_banner()
 
-            with thread_lock:
-                working_results.append((target_ip, lat, country, new_cfg))
-                print(f"{target_ip}:{p:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+    clean_ips = []
+    if LAST_CLEAN_IPS:
+        clean_ips = [item[0] if isinstance(item, (list, tuple)) else item for item in LAST_CLEAN_IPS]
+    else:
+        clean_ips = load_clean_ips_from_file()
 
-    with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
-        try:
-            futures = [executor.submit(worker_task, p) for p in ports_to_check]
-            for f in as_completed(futures):
-                if stop_scan: break
-        except KeyboardInterrupt:
-            stop_scan = True
+    if not clean_ips:
+        print(Colors.RED + "\n❌ هیچ آی‌پی سالمی یافت نشد!" + Colors.END)
+        return
 
-    working_results.sort(key=lambda x: x[1])
-    finalize_and_send(working_results, len(ports_to_check), "Smart Combined Config Results", "ترکیب_کانفیگ_با_ایپی.txt", is_config=True)
+    account_id, api_token = get_cf_credentials()
+    if not account_id or not api_token: return
 
-def menu_option_5_mahsa():
-    print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
-    for key, name in MAHSA_CDN_TYPES.items():
-        print(f"  [{key}] {name}")
-    selection = input(Colors.BOLD + "\n[>] Choose protocol number (1-5): " + Colors.END).strip()
-    if selection not in MAHSA_CDN_TYPES: return
+    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+    db_name = "amir-db"
 
-    profile_name = MAHSA_CDN_TYPES[selection]
-    ips = select_ip_source()
-    if not ips: return
+    res = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers)
+    db_id = None
+    if res.status_code == 200:
+        for db in res.json().get("result", []):
+            if db.get("name") == db_name:
+                db_id = db.get("uuid")
+                break
 
-    working_results, total_ips = run_scanner_engine(
-        ips, SCAN_SETTINGS['port'], SCAN_SETTINGS['domain'], 
-        SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
-        SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
+    if not db_id:
+        create_res = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database", headers=headers, json={"name": db_name})
+        if create_res.status_code == 200:
+            db_id = create_res.json()["result"]["uuid"]
+
+    print(Colors.BLUE + "\n[*] همگام‌سازی آی‌پی‌ها با دیتابیس D1..." + Colors.END)
+    sync_clean_ips_to_d1(account_id, api_token, db_id, [(ip, 100) for ip in clean_ips])
+
+    worker_url = deploy_worker_automatically(account_id, api_token, db_id)
+    if not worker_url:
+        print(Colors.RED + "❌ خطا در انتشار ورکر!" + Colors.END)
+        return
+
+    username = input(Colors.BOLD + "\n👤 نام کاربری جدید: " + Colors.END).strip()
+    if not username: return
+
+    cfg_count_in = input(Colors.BOLD + "🔢 تعداد کانفیگ (پیش‌فرض ۳۰): " + Colors.END).strip()
+    config_count = int(cfg_count_in) if cfg_count_in.isdigit() else 30
+
+    user_uuid = str(uuid.uuid4())
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
+        headers=headers,
+        json={"sql": "CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, user_uuid TEXT, protocol TEXT, config_count INTEGER, volume_gb REAL, expire_days INTEGER, max_ips INTEGER, created_at TEXT);"}
     )
-    finalize_and_send(working_results, total_ips, f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table", "مهسا_و_شیر_و_خورشید.txt")
 
-def menu_option_6_custom_scanner():
-    current_custom = SCAN_SETTINGS.copy()
-    print(Colors.YELLOW + "\n[>] Option 6: Custom Dedicated Scanner & Settings" + Colors.END)
-    choice = input(Colors.BOLD + "\nDo you want to change custom settings before scanning? (y/N): " + Colors.END).strip().lower()
-    if choice == 'y':
-        d = input(f"Enter Test Domain [{current_custom['domain']}]: ").strip()
-        if d: current_custom['domain'] = d
-        p = input(f"Enter Port [{current_custom['port']}]: ").strip()
-        if p.isdigit(): current_custom['port'] = int(p)
-
-    ips = select_ip_source()
-    if not ips: return
-    working_results, total_ips = run_scanner_engine(
-        ips, current_custom['port'], current_custom['domain'], 
-        current_custom['timeout'], current_custom['test_download'], 
-        current_custom['path'], current_custom['workers']
+    requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query",
+        headers=headers,
+        json={"sql": "INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?, ?, ?, ?);", "params": [username, user_uuid, "VLESS", config_count, 0, 0, 2, created_at]}
     )
-    finalize_and_send(working_results, total_ips, f"Custom Scanner Results Table", "اسکن_ایپی_با_تنظیمات_خودت.txt")
+
+    worker_sub_url = f"{worker_url}/sub/{username}"
+    print(Colors.GREEN + f"\n[✓] لینک ساب‌سکرپشن اختصاصی:\n{worker_sub_url}" + Colors.END)
+    send_notifications_all(f"🚀 ساب‌سکرپشن جدید ساخته شد:\n{worker_sub_url}\nکاربر: {username}")
 
 def main_menu():
     while True:
         print_banner()
         print(f"""{Colors.CYAN}
  ╔══════════════════════════════════════════════════════════════════╗
- ║  {Colors.GREEN}[1] Test IP Health (Edge Speed & Download Test){Colors.CYAN}               ║
- ║  {Colors.YELLOW}[2] Test IP and PORT with Latency Table{Colors.CYAN}                        ║
- ║  {Colors.MAGENTA}[3] Test TCP PORT Only{Colors.CYAN}                                         ║
- ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
- ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
- ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                       ║
- ║  {Colors.BOLD}{Colors.GREEN}[7] AMIR CONFIG SPEED (Full Auto-Deploy Subscription){Colors.CYAN}║
- ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
+ ║  {Colors.GREEN}[1] اسکن استاندارد آی‌پی‌های تمیز کلودفلر (443){Colors.CYAN}                 ║
+ ║  {Colors.GREEN}[2] اسکن سفارشی پورت‌های TLS (8443, 2053, ...){Colors.CYAN}                ║
+ ║  {Colors.GREEN}[3] اسکن سفارشی پورت‌های HTTP (80, 8080, ...){Colors.CYAN}                 ║
+ ║  {Colors.GREEN}[4] تنظیمات پیشرفته (سرعت دانلود، تایم‌اوت، Thread){Colors.CYAN}           ║
+ ║  {Colors.GREEN}[5] مدیریت کاربران D1 کلودفلر{Colors.CYAN}                               ║
+ ║  {Colors.GREEN}[7] ساخت لینک ساب‌سکرپشن (با خوانش فایل تست_سلامت_ایپی){Colors.CYAN}        ║
+ ║  {Colors.END}{Colors.CYAN}[0] خروج{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
-
-        choice = get_clean_input(Colors.BOLD + "[>] Select option: " + Colors.END)
-
-        if choice == "1":
-            menu_option_1()
-        elif choice == "2":
-            menu_option_2()
-        elif choice == "3":
-            menu_option_3()
-        elif choice == "4":
-            menu_option_4()
-        elif choice == "5":
-            menu_option_5_mahsa()
-        elif choice == "6":
-            menu_option_6_custom_scanner()
-        elif choice == "7":
-            menu_option_7_subscription_builder()
-        elif choice == "0":
-            print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
-            sys.exit(0)
-
-        input(Colors.BOLD + "\n[*] Press Enter to continue..." + Colors.END)
+        choice = get_clean_input(Colors.BOLD + "[>] انتخاب کنید: " + Colors.END)
+        if choice == "1": menu_option_1()
+        elif choice == "2": menu_option_2()
+        elif choice == "3": menu_option_3()
+        elif choice == "4": menu_option_settings()
+        elif choice == "5": menu_manage_d1_users()
+        elif choice == "7": menu_option_7_subscription_builder()
+        elif choice == "0": sys.exit(0)
+        input(Colors.BOLD + "\n[*] برای ادامه Enter بزنید..." + Colors.END)
         os.system("clear")
 
 if __name__ == "__main__":
