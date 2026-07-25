@@ -422,7 +422,7 @@ def print_banner():
  ╔══════════════════════════════════════════════════════════════════╗
  ║                        AMIR SCANNER PRO                          ║
  ╠══════════════════════════════════════════════════════════════════╗
- ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.6 (MLMVPN Features Added) {Colors.CYAN} ║
+ ║  {Colors.YELLOW}► Version        :{Colors.WHITE} v2.0.7 (Custom Features Added) {Colors.CYAN}   ║
  ║  {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                 ║
  ║  {Colors.YELLOW}► Rubika Admin   :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                 ║
  ╚══════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -704,14 +704,14 @@ def menu_option_6_custom_scanner():
     )
     finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table", "Custom_Scanner_Results.txt")
 
-def menu_option_7_mlmvpn_features():
+def menu_option_7_features():
     print(f"""{Colors.CYAN}{Colors.BOLD}
  ╔══════════════════════════════════════════════════════════════════╗
- ║         MLMVPN Features - Fixed IPs & Free WireGuard             ║
+ ║           Fixed IPs & Free WireGuard Generator                   ║
  ╚══════════════════════════════════════════════════════════════════╝
 {Colors.END}""")
-    print("1. Fixed IPs (آی‌پی ثابت واقعی - آمریکا، کانادا، ژاپن، کره و...)")
-    print("2. Free & Unlimited WireGuard (مخصوص بازی و کاهش پینگ)")
+    print("1. Fixed IPs (US, CA, JP, KR, TH, VN, RU, PT, RO, GD)")
+    print("2. Free & Unlimited WireGuard (For Gaming & Low Ping)")
     
     choice = get_clean_input(Colors.BOLD + "[>] Select feature (1/2): " + Colors.END)
     
@@ -723,8 +723,15 @@ def menu_option_7_mlmvpn_features():
             output_lines.append(f"# Country Fixed IP: {c}")
             output_lines.append(f"vless://fixed-ip-uuid@{c.lower().replace(' ', '-')}.amirspeed.workers.dev:443?encryption=none&security=tls&sni=chatgpt.com&type=ws&path=%2F#{c.replace(' ', '_')}")
         
-        save_to_file("MLMVPN_Fixed_IPs.txt", "\n".join(output_lines))
-        print(Colors.GREEN + "[✓] Fixed IP configurations generated and saved to /sdcard/Download/MLMVPN_Fixed_IPs.txt" + Colors.END)
+        result_text = "\n".join(output_lines)
+        save_to_file("Fixed_IPs.txt", result_text)
+        
+        msg_payload = f"📊 Fixed IPs Results\n\n{result_text}\n\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂"
+        send_to_telegram(msg_payload)
+        send_to_rubika(msg_payload)
+        send_to_bale(msg_payload)
+        
+        print(Colors.GREEN + "[✓] Fixed IP configurations generated, saved, and sent to messengers!" + Colors.END)
         
     elif choice == "2":
         print(Colors.GREEN + "\n[+] Generating Free & Unlimited WireGuard configs for Gamers..." + Colors.END)
@@ -739,8 +746,14 @@ Endpoint = 104.18.7.1:51820
 AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 """
-        save_to_file("MLMVPN_WireGuard.conf", wg_data)
-        print(Colors.GREEN + "[✓] WireGuard config file generated and saved to /sdcard/Download/MLMVPN_WireGuard.conf" + Colors.END)
+        save_to_file("WireGuard.conf", wg_data)
+        
+        msg_payload = f"📊 Free WireGuard Config\n\n{wg_data}\n\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂"
+        send_to_telegram(msg_payload)
+        send_to_rubika(msg_payload)
+        send_to_bale(msg_payload)
+        
+        print(Colors.GREEN + "[✓] WireGuard config file generated, saved, and sent to messengers!" + Colors.END)
 
 def main_menu():
     while True:
@@ -753,7 +766,7 @@ def main_menu():
  ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
  ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings (NEW!){Colors.CYAN}                 ║
- ║  {Colors.YELLOW}[7] MLMVPN Features (Fixed IPs & Free WireGuard){Colors.CYAN}              ║
+ ║  {Colors.YELLOW}[7] Fixed IPs & Free WireGuard Generator{Colors.CYAN}                     ║
  ║  {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                       ║
  ╚══════════════════════════════════════════════════════════════════╝
 """)
@@ -773,7 +786,7 @@ def main_menu():
         elif choice == "6":
             menu_option_6_custom_scanner()
         elif choice == "7":
-            menu_option_7_mlmvpn_features()
+            menu_option_7_features()
         elif choice == "0":
             print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
             sys.exit(0)
