@@ -10,9 +10,9 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+import urllib3
 
 # غیرفعال کردن هشدار SSL
-import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class Colors:
@@ -26,7 +26,7 @@ class Colors:
     BOLD = "\033[1m"
     END = "\033[0m"
 
-GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips"
+GITHUB_IP_URL = "[https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips](https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips)"
 
 DOWNLOAD_DIR = "/sdcard/Download"
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
@@ -52,7 +52,7 @@ SCAN_SETTINGS = {
     "test_download": True
 }
 
-# پورت‌های استخراج شده از تصویر BPB (TLS + Non-TLS)
+# پورت‌های TLS و Non-TLS
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
 NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
 PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
@@ -66,30 +66,70 @@ MAHSA_CDN_TYPES = {
 }
 
 stop_scan = False
+COUNTRY_CACHE = {}
 
 def get_ip_country(ip):
+    # کش کردن کشور بر اساس زیرشبکه /24 برای کاهش درخواست‌ها و جلوگیری از مسدود شدن
+    ip_prefix = ".".join(ip.split(".")[:3])
+    if ip_prefix in COUNTRY_CACHE:
+        return COUNTRY_CACHE[ip_prefix]
+
     try:
-        res = requests.get(f"https://ipmyp.ir/api/ip/{ip}", timeout=3)
+        res = requests.get(f"[http://ip-api.com/json/](http://ip-api.com/json/){ip}?fields=country", timeout=3)
+        if res.status_code == 200:
+            country = res.json().get("country", "Unknown")
+            if country and country != "Unknown":
+                COUNTRY_CACHE[ip_prefix] = country
+                return country
+    except Exception:
+        pass
+
+    try:
+        res = requests.get(f"[https://ipmyp.ir/api/ip/](https://ipmyp.ir/api/ip/){ip}", timeout=3)
         data = res.json()
         country = data.get("country") or data.get("country_name") or "Unknown"
-        return country
-    except:
-        try:
-            res = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=2)
-            data = res.json()
-            return data.get("country", "Unknown")
-        except:
-            return "Unknown"
+        if country != "Unknown":
+            COUNTRY_CACHE[ip_prefix] = country
+            return country
+    except Exception:
+        pass
+
+    return "Unknown"
+
+def split_message_smart(text, max_length=3500):
+    """تقسیم هوشمند پیام بر اساس خطوط جهت جلوگیری از شکستن آی‌پی‌ها"""
+    lines = text.split("\n")
+    chunks = []
+    current_chunk = []
+    current_length = 0
+
+    for line in lines:
+        if current_length + len(line) + 1 > max_length:
+            chunks.append("\n".join(current_chunk))
+            current_chunk = [line]
+            current_length = len(line)
+        else:
+            current_chunk.append(line)
+            current_length += len(line) + 1
+
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+
+    return chunks
 
 def send_to_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    max_length = 4000
-    chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
-    print(Colors.BLUE + "\n[*] Sending results to Telegram..." + Colors.END)
+    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/sendMessage"
+    chunks = split_message_smart(text, max_length=3800)
+    print(Colors.BLUE + "[*] Sending results to Telegram..." + Colors.END)
     for chunk in chunks:
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "disable_web_page_preview": True}
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": chunk,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True
+        }
         for attempt in range(3):
             try:
                 res = requests.post(url, json=payload, timeout=15)
@@ -103,9 +143,8 @@ def send_to_telegram(text):
 def send_to_rubika(text):
     if not RUBIKA_BOT_TOKEN or not RUBIKA_CHAT_ID:
         return
-    url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
-    max_length = 3500
-    chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
+    url = f"[https://botapi.rubika.ir/v01/](https://botapi.rubika.ir/v01/){RUBIKA_BOT_TOKEN}/sendMessage"
+    chunks = split_message_smart(text, max_length=3200)
     print(Colors.BLUE + "[*] Sending results to Rubika..." + Colors.END)
     for chunk in chunks:
         payload = {"chat_id": RUBIKA_CHAT_ID, "text": chunk}
@@ -122,9 +161,8 @@ def send_to_rubika(text):
 def send_to_bale(text):
     if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
         return
-    url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
-    max_length = 4000
-    chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
+    url = f"[https://tapi.bale.ai/bot](https://tapi.bale.ai/bot){BALE_BOT_TOKEN}/sendMessage"
+    chunks = split_message_smart(text, max_length=3800)
     print(Colors.BLUE + "[*] Sending results to Bale..." + Colors.END)
     for chunk in chunks:
         payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
@@ -139,16 +177,49 @@ def send_to_bale(text):
             except Exception:
                 if attempt == 2:
                     pass
-        if success:
-            print(Colors.GREEN + "پیام با موفقیت به بله ارسال شد." + Colors.END)
-        else:
-            print(Colors.RED + "ارسال پیام به بله با خطا مواجه شد و انجام نگرفت." + Colors.END)
+        if not success:
+            print(Colors.RED + "[!] Failed to send to Bale after 3 attempts." + Colors.END)
 
-def send_all(text):
-    full_text = f"{text}\n\n🔥 آی‌پی تمیز خدمت شما:\n\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂"
-    send_to_telegram(full_text)
-    send_to_rubika(full_text)
-    send_to_bale(full_text)
+def send_results_by_country(working_results, title_msg, is_config=False):
+    if not working_results:
+        return
+
+    # ۱. دسته‌بندی نتایج بر اساس کشور
+    country_groups = {}
+    for item in working_results:
+        if is_config:
+            ip, lat, country, cfg_str = item
+            val = cfg_str
+        else:
+            target_str, lat, country = item
+            val = target_str
+
+        if country not in country_groups:
+            country_groups[country] = []
+        country_groups[country].append(val)
+
+    # ۲. ساخت و ارسال پیام مجزا برای هر کشور
+    for country, items in country_groups.items():
+        lines = []
+        lines.append(f"📊 {title_msg}\n")
+        
+        # قرار دادن لیست آی‌پی‌ها داخل بلوک کد برای جلوگیری از به‌هم‌ریختگی ظاهری
+        lines.append("```")
+        for val in items:
+            lines.append(val)
+        lines.append("```\n")
+        
+        # اطلاعات کشور و سازنده در انتهای پیام
+        lines.append(f"🏴 کشور: {country} | تعداد: {len(items)} عدد\n")
+        lines.append(f"🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام صاحب سازنده: {TELEGRAM_ID}\nآیدی روبیکا صاحب سازنده: {RUBIKA_ID}\nحمایت کنید دلقکا 😂")
+
+        single_message = "\n".join(lines)
+
+        print(Colors.BLUE + f"\n[*] Sending {len(items)} items for [{country}]..." + Colors.END)
+        send_to_telegram(single_message)
+        send_to_rubika(single_message)
+        send_to_bale(single_message)
+        time.sleep(1.5)
 
 def get_clean_input(prompt_text):
     try:
@@ -274,47 +345,35 @@ def select_ip_source():
         print(Colors.RED + "[!] Invalid choice selected." + Colors.END)
         return []
 
-# سیستم اسکن ۷ خان رستم (سخت‌گیرانه و فوق‌العاده مطمئن)
 def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_download=True, path="/"):
-    for attempt in range(2): # خان هفتم: تکرار دوبار برای اطمینان از عدم قطع و وصلی
+    for attempt in range(2):
         start_time = time.time()
         try:
-            # خان اول: ایجاد سوکت اولیه
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
-            
-            # خان دوم: تست Handshake اولیه TCP
             sock.connect((ip, port))
             
             if port in NON_TLS_PORTS:
-                # خان چهارم (برای پورت غیر TLS): ارسال دیتا
                 request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
                 sock.sendall(request_data.encode())
-                
-                # خان پنجم: تایید دریافت بایت پاسخ
                 response = sock.recv(1024)
                 sock.close()
                 if not response:
                     continue
             else:
-                # خان سوم: تست Handshake SSL/TLS
                 context = ssl.create_default_context()
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
 
                 tls_sock = context.wrap_socket(sock, server_hostname=domain)
-                
-                # خان چهارم (برای TLS): ارسال دیتا
                 request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
                 tls_sock.sendall(request_data.encode())
-                
-                # خان پنجم: تایید دریافت پاسخ
                 response = tls_sock.recv(1024)
                 tls_sock.close()
+                sock.close()
                 if not response:
                     continue
 
-            # خان ششم: محاسبه پینگ نهایی
             latency = (time.time() - start_time) * 1000
             return round(latency, 1)
 
@@ -373,39 +432,6 @@ def print_banner():
 """
     print(banner)
 
-def build_separated_tables_message(working_results, title_msg, is_config=False):
-    country_groups = {}
-    for item in working_results:
-        if is_config:
-            ip, lat, country, cfg_str = item
-            key_val = cfg_str
-        else:
-            target_str, lat, country = item
-            key_val = target_str
-
-        if country not in country_groups:
-            country_groups[country] = []
-        country_groups[country].append(key_val)
-
-    message_blocks = [f"📊 {title_msg}\n"]
-    
-    for country, items in country_groups.items():
-        table_border = "┌───────────────────────────────┐"
-        table_footer = "└───────────────────────────────┘"
-        
-        block_lines = [
-            table_border,
-            f"🏴 کشور: {country} ({len(items)} عدد)",
-            "├───────────────────────────────┤"
-        ]
-        for val in items:
-            block_lines.append(f" {val}")
-        block_lines.append(table_footer)
-        
-        message_blocks.append("\n".join(block_lines))
-
-    return "\n\n".join(message_blocks)
-
 def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
     
@@ -421,8 +447,7 @@ def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_c
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
     
     if working_results:
-        separated_text = build_separated_tables_message(working_results, title_msg, is_config)
-        send_all(separated_text)
+        send_results_by_country(working_results, title_msg, is_config)
         
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
 
@@ -441,7 +466,7 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
         tasks = ips
 
     total_tasks = len(tasks)
-    print(Colors.BLUE + f"\n[*] Scanning {total_tasks} items using {workers} parallel workers (Press Ctrl+C to stop & save/send)...\n" + Colors.END)
+    print(Colors.BLUE + f"\n[*] Scanning {total_tasks} items using {workers} parallel workers (Press Ctrl+C to stop)...\n" + Colors.END)
 
     def worker_task(item):
         if stop_scan:
@@ -500,7 +525,7 @@ def menu_option_1():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, "Clean IPs Table", "تست_سلامت_ایپی.txt")
+    finalize_and_send(working_results, total_ips, "Clean IPs Table", "IP_Health_Check.txt")
 
 def menu_option_2():
     print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
@@ -512,7 +537,7 @@ def menu_option_2():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'], is_port_scan=True
     )
-    finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table", "تست_ایپی_و_پورت.txt")
+    finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table", "IP_and_Port_Check.txt")
 
 def menu_option_3():
     global stop_scan
@@ -550,22 +575,18 @@ def menu_option_3():
             print(Colors.YELLOW + "\n[!] Stopped by user. Saving working results..." + Colors.END)
 
     print("\n" + "-" * 65)
-    finalize_and_send(results, total_combinations, "Open Ports Table", "تست_پورت_خالی.txt")
+    finalize_and_send(results, total_combinations, "Open Ports Table", "Open_Ports_Check.txt")
 
-# گزینه ۴ کاملاً مستقیم: کانفیگ -> آی‌پی -> (اینتر برای تست همه پورت‌های تصویر)
 def menu_option_4():
     global stop_scan
     print(Colors.YELLOW + "\n[>] Option 4: Smart Config Combiner (Direct IP)" + Colors.END)
     
-    # 1. ورودی کانفیگ خام
     raw_config = input(Colors.BOLD + "Enter Raw Config: " + Colors.END).strip()
     if not raw_config: return
     
-    # 2. ورودی مستقیم آی‌پی (بدون منوی اضافه)
     target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
     if not target_ip: return
     
-    # 3. دریافت پورت (در صورت زدن اینتر، تمام پورت‌های TLS و Non-TLS اسکن می‌شوند)
     port_input = input(Colors.BOLD + "Enter Port (Leave empty to test ALL 13 ports from BPB): " + Colors.END).strip()
     
     if port_input.isdigit():
@@ -589,13 +610,11 @@ def menu_option_4():
         if lat is not None:
             country = get_ip_country(target_ip)
             
-            # جایگزینی هوشمند آی‌پی قدیمی با آی‌پی جدید
             if old_ip:
                 new_cfg = raw_config.replace(old_ip, target_ip)
             else:
                 new_cfg = raw_config
 
-            # جایگزینی پورت متصل به آی‌پی
             new_cfg = re.sub(rf"({re.escape(target_ip)}):(\d+)", rf"\1:{p}", new_cfg)
             
             if f":{p}" not in new_cfg and old_ip:
@@ -619,7 +638,7 @@ def menu_option_4():
     print("\n" + "-" * 65)
     working_results.sort(key=lambda x: x[1])
     
-    finalize_and_send(working_results, len(ports_to_check), "Smart Combined Config Results", "ترکیب_کانفیگ_با_ایپی.txt", is_config=True)
+    finalize_and_send(working_results, len(ports_to_check), "Smart Combined Config Results", "Combined_Config_Results.txt", is_config=True)
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
@@ -647,7 +666,7 @@ def menu_option_5_mahsa():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table", "مهسا_و_شیر_و_خورشید.txt")
+    finalize_and_send(working_results, total_ips, f"Mahsa/Shir-Khorshid Bypass IPs [{profile_name}] Table", "Mahsa_Bypass_Results.txt")
 
 def menu_option_6_custom_scanner():
     current_custom = SCAN_SETTINGS.copy()
@@ -686,7 +705,7 @@ def menu_option_6_custom_scanner():
         current_custom['timeout'], current_custom['test_download'], 
         current_custom['path'], current_custom['workers']
     )
-    finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table", "اسکن_ایپی_با_تنظیمات_خودت.txt")
+    finalize_and_send(working_results, total_ips, f"Custom Scanner Results (Domain: {current_custom['domain']}) Table", "Custom_Scanner_Results.txt")
 
 def main_menu():
     while True:
