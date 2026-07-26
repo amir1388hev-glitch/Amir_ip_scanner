@@ -39,6 +39,9 @@ TELEGRAM_CHAT_ID = "-1004437972136"
 BALE_BOT_TOKEN = "2690620:Nm1F_42X7P1ZMCg8VMMsQaMKDgDOEbSIvUk"
 BALE_CHAT_ID = "5495275998"
 
+IGAP_BOT_TOKEN = "C2487d0c-8f3c-40ba-b567-a38634788195"
+IGAP_CHAT_ID = "@ipscanner"
+
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
@@ -168,6 +171,23 @@ def send_to_bale(text):
             except Exception:
                 pass
 
+def send_to_igap(text):
+    if not IGAP_BOT_TOKEN or not IGAP_CHAT_ID:
+        return
+    url = f"https://api.igap.net/v1/bot/{IGAP_BOT_TOKEN}/sendMessage"
+    chunks = split_message_smart(text, max_length=3200)
+    print(Colors.BLUE + "[*] Sending results to iGap..." + Colors.END)
+    for chunk in chunks:
+        payload = {"chat_id": IGAP_CHAT_ID, "text": chunk}
+        for attempt in range(3):
+            try:
+                res = requests.post(url, json=payload, timeout=12)
+                if res.status_code == 200:
+                    print(Colors.GREEN + "[+] Successfully sent to iGap!" + Colors.END)
+                    break
+            except Exception:
+                pass
+
 def send_results_by_country(working_results, title_msg, is_config=False):
     if not working_results:
         return
@@ -196,6 +216,7 @@ def send_results_by_country(working_results, title_msg, is_config=False):
         send_to_telegram(single_message)
         send_to_rubika(single_message)
         send_to_bale(single_message)
+        send_to_igap(single_message)
         time.sleep(1)
 
 def get_clean_input(prompt_text):
@@ -747,6 +768,7 @@ def menu_option_8_udp_tcp():
             send_to_telegram(single_message)
             send_to_rubika(single_message)
             send_to_bale(single_message)
+            send_to_igap(single_message)
             time.sleep(1)
 
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_tasks}" + Colors.END)
@@ -759,7 +781,7 @@ def main_menu():
  ║  {Colors.GREEN}[1] Test IP Health (Edge Speed & Download Test){Colors.CYAN}               ║
  ║  {Colors.YELLOW}[2] Test IP and PORT with Latency Table{Colors.CYAN}                        ║
  ║  {Colors.MAGENTA}[3] Test TCP PORT Only{Colors.CYAN}                                         ║
- ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale){Colors.CYAN}      ║
+ ║  {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale & iGap){Colors.CYAN} ║
  ║  {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}              ║
  ║  {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                         ║
  ║  {Colors.MAGENTA}[7] Amir tunneling good{Colors.CYAN}                                         ║
