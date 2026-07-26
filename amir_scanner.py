@@ -235,7 +235,9 @@ def gmail_two_factor_auth():
 
     user_email = ""
     user_password = ""
-    if saved_email:
+    
+    # اگر ایمیل ذخیره‌شده خود دامنه اشتباه داشته باشد، اصلاً پیشنهاد نمی‌دهد
+    if saved_email and saved_email.lower().endswith("@gmail.com"):
         choice = input(Colors.BOLD + f"[?] Do you want to log in with saved email ({saved_email})? (y/n): " + Colors.END).strip().lower()
         if choice == 'y':
             user_email = saved_email
@@ -244,18 +246,17 @@ def gmail_two_factor_auth():
     while not user_email:
         raw_email = input(Colors.BOLD + "Please enter your Gmail address (e.g. user@gmail.com): " + Colors.END).strip()
         
-        # بررسی ساختار ایمیل و دامنه دقیق gmail.com
         if "@" in raw_email:
             parts = raw_email.split("@")
             username_part = parts[0]
-            domain_part = parts[1].lower()
+            domain_part = parts[1].lower().strip()
             
             if domain_part == "gmail.com" and len(username_part) > 2:
                 user_email = raw_email
             else:
-                print(Colors.RED + "[!] Invalid domain or fake Gmail! Only real 'gmail.com' addresses are allowed." + Colors.END)
+                print(Colors.RED + "[!] Invalid domain! Only real 'gmail.com' addresses are allowed." + Colors.END)
         else:
-            print(Colors.RED + "[!] Invalid email format! Please try again." + Colors.END)
+            print(Colors.RED + "[!] Invalid email format! Please include '@'." + Colors.END)
 
     while not user_password:
         user_password = input(Colors.BOLD + "Please enter your desired password: " + Colors.END).strip()
@@ -711,8 +712,6 @@ def menu_option_8_udp_tcp():
     import threading
     thread_lock = threading.Lock()
     tasks_list = [(ip, target_port) for ip in ips]
-
-    protocol_name = "UDP" if sub_choice == "1" else "TCP"
 
     def worker_task(item):
         if stop_scan: return
