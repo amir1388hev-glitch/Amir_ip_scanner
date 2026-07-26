@@ -8,6 +8,12 @@ import socket
 import ssl
 import sys
 import time
+import json
+import random
+import smtplib
+from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import urllib3
@@ -29,6 +35,7 @@ GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/
 
 DOWNLOAD_DIR = "/sdcard/Download"
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
+CONFIG_FILE = os.path.expanduser("~/.amir_scanner_config.json")
 
 RUBIKA_BOT_TOKEN = "CABGDG0AGFFRWJKSBWBUBRUGGFMYNFITBVVDKTSVBNOKZWANYOITFQILZSSLCRKT"
 RUBIKA_CHAT_ID = "g0ILUMK0562851bf38dfcd7703bdeb22"
@@ -192,7 +199,7 @@ def send_to_igap(text):
             except Exception:
                 pass
 
-def send_results_by_country(working_results, title_msg, is_config=False):
+def send_results_by_country(working_results, header_prefix, title_msg, is_config=False):
     if not working_results:
         return
 
@@ -210,7 +217,7 @@ def send_results_by_country(working_results, title_msg, is_config=False):
         country_groups[country].append(val)
 
     for country, items in country_groups.items():
-        lines = [f"📊 نتایج اسکن ({title_msg})\n"]
+        lines = [f"{header_prefix}\n"]
         lines.extend(items)
         lines.append(f"\n🏴 کشور: {country} | تعداد: {len(items)} عدد")
         lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}")
@@ -222,6 +229,75 @@ def send_results_by_country(working_results, title_msg, is_config=False):
         send_to_bale(single_message)
         send_to_igap(single_message)
         time.sleep(1)
+
+def gmail_two_factor_auth():
+    SENDER_EMAIL = "your_email@gmail.com"
+    SENDER_PASSWORD = "your_app_password"
+    
+    saved_email = ""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                saved_email = data.get("email", "")
+        except:
+            pass
+
+    user_email = ""
+    if saved_email:
+        choice = input(Colors.BOLD + f"[?] Do you want to log in with this email ({saved_email})? (y/n): " + Colors.END).strip().lower()
+        if choice == 'y':
+            user_email = saved_email
+
+    if not user_email:
+        user_email = input(Colors.BOLD + "Please enter your Gmail address: " + Colors.END).strip()
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                json.dump({"email": user_email}, f)
+        except:
+            pass
+
+    verification_code = str(random.randint(10000, 99999))
+    
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = user_email
+    msg['Subject'] = "Termux Script Verification Code"
+    
+    body = f"Your verification code for Termux Script login is:\n\n{verification_code}\n\nPlease enter this code in Termux."
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        print(Colors.BLUE + "[*] Sending verification code to Gmail..." + Colors.END)
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, user_email, msg.as_string())
+        server.quit()
+        print(Colors.GREEN + "[+] Code sent successfully!" + Colors.END)
+    except Exception as e:
+        print(Colors.RED + f"[!] Error sending email: {e}" + Colors.END)
+        sys.exit(1)
+        
+    for attempt in range(3):
+        entered_code = input(Colors.BOLD + "Enter the 5-digit verification code: " + Colors.END).strip()
+        if entered_code == verification_code:
+            print(Colors.GREEN + "[+] Authentication successful. Welcome!" + Colors.END)
+            
+            # Send login details to messengers
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            login_msg = f"یک کاربر با اطلاعات زیر در پروژه ثبت نام کرد:\n\n📧 ایمیل: {user_email}\n🕒 تاریخ و ساعت ورود: {current_time}"
+            send_to_telegram(login_msg)
+            send_to_rubika(login_msg)
+            send_to_bale(login_msg)
+            send_to_igap(login_msg)
+            
+            return True
+        else:
+            print(Colors.RED + f"[!] Incorrect code! ({2 - attempt} attempts remaining)" + Colors.END)
+            
+    print(Colors.RED + "[!] Too many incorrect attempts. Access denied." + Colors.END)
+    sys.exit(1)
 
 def get_clean_input(prompt_text):
     try:
@@ -467,7 +543,7 @@ def print_banner():
 """
     print(banner)
 
-def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_config=False):
+def finalize_and_send(working_results, total_ips, header_prefix, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
     
     clean_ips_for_file = []
@@ -482,7 +558,7 @@ def finalize_and_send(working_results, total_ips, title_msg, save_filename, is_c
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
     
     if working_results:
-        send_results_by_country(working_results, title_msg, is_config)
+        send_results_by_country(working_results, header_prefix, header_prefix, is_config)
         
     print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
 
@@ -551,7 +627,7 @@ def menu_option_1():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, "Clean IPs Table", "IP_Health_Check.txt")
+    finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nاین تست ایپیه", "IP_Health_Check.txt")
 
 def menu_option_2():
     print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
@@ -562,7 +638,7 @@ def menu_option_2():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers'], is_port_scan=True
     )
-    finalize_and_send(working_results, total_ips, "Healthy IPs & Ports Table", "IP_and_Port_Check.txt")
+    finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nاین تست ایپی روی پورته", "IP_and_Port_Check.txt")
 
 def menu_option_3():
     global stop_scan
@@ -594,7 +670,7 @@ def menu_option_3():
         except KeyboardInterrupt:
             stop_scan = True
 
-    finalize_and_send(results, total_combinations, "Open Ports Table", "Open_Ports_Check.txt")
+    finalize_and_send(results, total_combinations, "📊 نتایج اسکن\nتست ایپی روی پورته با فرایند tcp", "Open_Ports_Check.txt")
 
 def menu_option_4():
     global stop_scan
@@ -637,7 +713,7 @@ def menu_option_4():
         except KeyboardInterrupt:
             stop_scan = True
 
-    finalize_and_send(working_results, len(ports_to_check), "Smart Combined Config Results", "Combined_Config_Results.txt", is_config=True)
+    finalize_and_send(working_results, len(ports_to_check), "📊 نتایج اسکن\nکانفیگ های ترکیب شده", "Combined_Config_Results.txt", is_config=True)
 
 def menu_option_5_mahsa():
     print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
@@ -654,7 +730,7 @@ def menu_option_5_mahsa():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, f"Mahsa Bypass IPs [{profile_name}] Table", "Mahsa_Bypass_Results.txt")
+    finalize_and_send(working_results, total_ips, f"📊 نتایج اسکن\nایپی هاش مخصوص شیر و خورشید و مهسا ان جیه [{profile_name}]", "Mahsa_Bypass_Results.txt")
 
 def menu_option_6_custom_scanner():
     print(Colors.YELLOW + "\n[>] Option 6: Custom Dedicated Scanner & Settings" + Colors.END)
@@ -665,7 +741,7 @@ def menu_option_6_custom_scanner():
         SCAN_SETTINGS['timeout'], SCAN_SETTINGS['test_download'], 
         SCAN_SETTINGS['path'], SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, "Custom Scanner Results", "Custom_Scanner_Results.txt")
+    finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nتست ایپی با اسکنر مخصوص با تنظیمات خودت", "Custom_Scanner_Results.txt")
 
 def menu_option_7_amir_tunneling():
     print(Colors.CYAN + "\n" + "="*65)
@@ -691,6 +767,15 @@ def menu_option_7_amir_tunneling():
 """
     print(info_text)
     print(Colors.CYAN + "="*65 + Colors.END)
+    
+    persian_explanation = """مقدمات و توضیح هسته های اضافه شده:
+1. موتور پردازش پرقدرت: طراحی شده برای مسیریابی فوق‌العاده سریع اتصال و تحویل بسته‌ها با تاخیر کم. ترافیک TCP و UDP را برای عبور از محدودیت‌های سخت شبکه بهینه می‌کند.
+2. امنیت و پایداری پیشرفته: لایه‌های رمزنگاری قدرتمندی را برای محافظت از ترافیک کاربر در برابر بازرسی پیاده‌سازی می‌کند."""
+    
+    send_to_telegram(persian_explanation)
+    send_to_rubika(persian_explanation)
+    send_to_bale(persian_explanation)
+    send_to_igap(persian_explanation)
 
 def menu_option_8_udp_tcp():
     global stop_scan
@@ -762,8 +847,9 @@ def menu_option_8_udp_tcp():
                 country_groups[country] = []
             country_groups[country].append(target_str)
 
+        proto_text = "تست با tcp" if sub_choice == "2" else "تست با udp"
         for country, items in country_groups.items():
-            lines = [f"📊 نتایج اسکن (Advanced {protocol_name} Connectivity Results)\n"]
+            lines = [f"📊 نتایج اسکن\n{proto_text}\n"]
             lines.extend(items)
             lines.append(f"\n🏴 کشور: {country} | تعداد: {len(items)} عدد")
             lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}")
@@ -822,4 +908,5 @@ def main_menu():
         os.system("clear")
 
 if __name__ == "__main__":
+    gmail_two_factor_auth()
     main_menu()
