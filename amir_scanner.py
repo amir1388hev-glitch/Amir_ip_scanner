@@ -724,7 +724,32 @@ def menu_option_8_udp_tcp():
 
     print("\n" + "-" * 65)
     filename = f"UDP_Scan_Results.txt" if sub_choice == "1" else "TCP_Scan_Results.txt"
-    finalize_and_send(working_results, total_tasks, f"Advanced {protocol_name} Connectivity Results", filename)
+    working_results.sort(key=lambda x: x[1])
+    
+    clean_ips_for_file = [item[0] for item in working_results]
+    save_to_file(filename, "\n".join(clean_ips_for_file))
+    
+    if working_results:
+        country_groups = {}
+        for item in working_results:
+            target_str, lat, country = item
+            if country not in country_groups:
+                country_groups[country] = []
+            country_groups[country].append(target_str)
+
+        for country, items in country_groups.items():
+            lines = [f"📊 نتایج اسکن (Advanced {protocol_name} Connectivity Results)\n"]
+            lines.extend(items)
+            lines.append(f"\n🏴 کشور: {country} | تعداد: {len(items)} عدد")
+            lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}")
+
+            single_message = "\n".join(lines)
+            send_to_telegram(single_message)
+            send_to_rubika(single_message)
+            send_to_bale(single_message)
+            time.sleep(1)
+
+    print(Colors.GREEN + f"\n[SUMMARY] Working: {len(working_results)} | Total: {total_tasks}" + Colors.END)
 
 def main_menu():
     while True:
