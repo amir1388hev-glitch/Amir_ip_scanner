@@ -174,14 +174,18 @@ def send_to_bale(text):
 def send_to_igap(text):
     if not IGAP_BOT_TOKEN or not IGAP_CHAT_ID:
         return
-    url = f"https://api.igap.net/v1/bot/{IGAP_BOT_TOKEN}/sendMessage"
+    url = "https://api.igap.net/v1/bot/sendMessage"
     chunks = split_message_smart(text, max_length=3200)
     print(Colors.BLUE + "[*] Sending results to iGap..." + Colors.END)
     for chunk in chunks:
-        payload = {"chat_id": IGAP_CHAT_ID, "text": chunk}
+        payload = {
+            "token": IGAP_BOT_TOKEN,
+            "room_id": IGAP_CHAT_ID,
+            "message": chunk
+        }
         for attempt in range(3):
             try:
-                res = requests.post(url, json=payload, timeout=12)
+                res = requests.post(url, json=payload, timeout=10)
                 if res.status_code == 200:
                     print(Colors.GREEN + "[+] Successfully sent to iGap!" + Colors.END)
                     break
