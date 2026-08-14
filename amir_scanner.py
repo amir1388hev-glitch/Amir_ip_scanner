@@ -717,7 +717,7 @@ def menu_option_9_zeus_panel():
         print(f"{Colors.CYAN}{Colors.BOLD}║                 ZEUS PANEL MANAGER (AMIR)                ║{Colors.END}")
         print(f"{Colors.CYAN}{Colors.BOLD}╚══════════════════════════════════════════════════════════╝{Colors.END}")
         print(f"{Colors.GREEN}[1] Active Users & Traffic Stats{Colors.END}", flush=True)
-        print(f"{Colors.YELLOW}[2] Amir Create Config{Colors.END}", flush=True)
+        print(f"{Colors.YELLOW}[2] Amir Create Config (Cloudflare API & Repo IPs){Colors.END}", flush=True)
         print(f"{Colors.BLUE}[3] Clean IP Repository & Settings{Colors.END}", flush=True)
         print(f"{Colors.MAGENTA}[4] User List & Operations{Colors.END}", flush=True)
         print(f"{Colors.RED}[0] Back to Main Menu{Colors.END}", flush=True)
@@ -735,10 +735,37 @@ def menu_option_9_zeus_panel():
             
         elif sub_choice == "2":
             os.system("clear")
-            print(f"{Colors.YELLOW}--- Amir Create Config ---{Colors.END}", flush=True)
-            cfg_name = input(Colors.BOLD + "Enter Config Name (e.g. ZEUS-USER): " + Colors.END).strip()
-            if cfg_name:
-                print(f"{Colors.GREEN}[+] Config {cfg_name} successfully created and subscription link generated!{Colors.END}", flush=True)
+            print(f"{Colors.YELLOW}--- Amir Create Config & Cloudflare Verification ---{Colors.END}", flush=True)
+            api_key = input(Colors.BOLD + "Enter Cloudflare API Key: " + Colors.END).strip()
+            zone_id = input(Colors.BOLD + "Enter Cloudflare Zone ID: " + Colors.END).strip()
+            
+            if not api_key or not zone_id:
+                print(Colors.RED + "[!] API Key and Zone ID cannot be empty!" + Colors.END, flush=True)
+                input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
+                continue
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            print(Colors.YELLOW + "[*] Checking Cloudflare API..." + Colors.END, flush=True)
+            try:
+                res = requests.get(f"https://api.cloudflare.com/client/v4/zones/{zone_id}", headers=headers, timeout=10)
+                data = res.json()
+                if data.get("success"):
+                    print(Colors.GREEN + "✅ تایید موفق! API کلودفلر معتبر است." + Colors.END, flush=True)
+                    print(Colors.CYAN + "[*] Fetching clean IPs from GitHub repository..." + Colors.END, flush=True)
+                    ips = get_ips_from_github(GITHUB_IP_URL)
+                    print(Colors.GREEN + f"[+] Loaded {len(ips)} clean IPs from repository." + Colors.END, flush=True)
+                    
+                    cfg_name = input(Colors.BOLD + "Enter Config Name (e.g. ZEUS-USER): " + Colors.END).strip()
+                    if cfg_name:
+                        selected_ip = random.choice(ips) if ips else "Default-IP"
+                        print(Colors.GREEN + f"[+] Config '{cfg_name}' successfully created using clean IP ({selected_ip}) and subscription link generated!" + Colors.END, flush=True)
+                else:
+                    print(Colors.RED + "❌ خطا: کلید API یا Zone ID اشتباه است." + Colors.END, flush=True)
+            except Exception as e:
+                print(Colors.RED + f"❌ خطای ارتباطی: {e}" + Colors.END, flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
             
         elif sub_choice == "3":
