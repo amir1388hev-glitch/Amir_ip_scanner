@@ -1119,7 +1119,6 @@ def menu_option_9_zeus_panel():
                     
                     print(Colors.YELLOW + f"[*] Deploying Zeus JS Core to Worker '{worker_name}'..." + Colors.END, flush=True)
                     
-                    # دیپلوی ورکر به صورت ماژولار که در سورس قید شده بود
                     deploy_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/scripts/{worker_name}"
                     metadata = {
                         "main_module": "zeus.js",
@@ -1137,14 +1136,12 @@ def menu_option_9_zeus_panel():
                     if deploy_res.status_code == 200:
                         print(Colors.GREEN + "✅ Worker deployed successfully!" + Colors.END, flush=True)
                         
-                        # دریافت ساب‌دامین ورکر
                         sub_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/subdomain"
                         sub_res = requests.get(sub_url, headers=headers).json()
                         subdomain = sub_res.get("result", {}).get("subdomain", "workers.dev")
                         worker_host = f"{worker_name}.{subdomain}.workers.dev"
                         
                         print(Colors.CYAN + "[*] Fetching clean IPs from Zeus repository..." + Colors.END, flush=True)
-                        # دریافت IP تمیز از مخزن موجود در سورس
                         ip_repo_url = "https://raw.githubusercontent.com/panel-zeus/Z-E-U-S/main/ips.txt"
                         clean_ip = "104.16.0.1"
                         try:
@@ -1162,7 +1159,8 @@ def menu_option_9_zeus_panel():
                         
                         vless_link = f"vless://{user_uuid}@{clean_ip}:443?encryption=none&security=tls&sni={worker_host}&type=ws&host={worker_host}&path=%2F#{cfg_name}"
                         
-                        print(Colors.GREEN + f"\n[+] Config successfully created!\n{Colors.WHITE}{vless_link}{Colors.END}" + flush=True)
+                        # خطای اصلاح‌شده اینجا قرار دارد:
+                        print(Colors.GREEN + f"\n[+] Config successfully created!\n{Colors.WHITE}{vless_link}{Colors.END}", flush=True)
                         ZEUS_USERS_DB.append({"name": cfg_name, "status": "Active", "port": 443, "country": get_ip_country(clean_ip), "traffic": "0 MB"})
                     else:
                         print(Colors.RED + f"❌ خطا در آپلود ورکر: {deploy_res.text}" + Colors.END, flush=True)
