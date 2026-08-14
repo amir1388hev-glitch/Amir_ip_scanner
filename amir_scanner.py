@@ -229,7 +229,7 @@ def parse_ip_input(user_input):
                 for ip in network.hosts():
                     ips.append(str(ip))
                     count += 1
-                    if count >= 512:  # Safety cap to prevent freezing on large subnets
+                    if count >= 512:
                         break
             except Exception:
                 pass
@@ -388,7 +388,7 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ AMIR SCANNER PRO                                                         ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.4.0 (English Engine Fix){Colors.CYAN}                      ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.5.0 (Stable Fix){Colors.CYAN}                               ║
 ║ {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                           ║
 ║ {Colors.YELLOW}► Rubika Admin :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                             ║
 ╚══════════════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -461,6 +461,7 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
                     break
         except KeyboardInterrupt:
             stop_scan = True
+            print(Colors.YELLOW + "\n[*] Scan interrupted by user." + Colors.END, flush=True)
             
     return working_results, total_tasks
 
@@ -468,6 +469,7 @@ def menu_option_1():
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
+        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -479,11 +481,14 @@ def menu_option_1():
         SCAN_SETTINGS['workers']
     )
     finalize_and_send(working_results, total_ips, "📊 Scan Results\nIP Health Check Test", "IP_Health_Check.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs found: {len(working_results)}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
 def menu_option_2():
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
+        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -496,12 +501,15 @@ def menu_option_2():
         is_port_scan=True
     )
     finalize_and_send(working_results, total_ips, "📊 Scan Results\nIP and Port Latency Check", "IP_and_Port_Check.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs found: {len(working_results)}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
 def menu_option_3():
     global stop_scan
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
+        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
         return
     tasks_list = [(ip, port) for ip in ips for port in PORTS_TO_TEST]
     total_combinations = len(tasks_list)
@@ -532,6 +540,8 @@ def menu_option_3():
             stop_scan = True
             
     finalize_and_send(results, total_combinations, "📊 Scan Results\nOpen TCP Ports Check", "Open_Ports_Check.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Total open ports found: {len(results)}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
 def menu_option_4():
     global stop_scan
@@ -573,6 +583,8 @@ def menu_option_4():
             stop_scan = True
             
     finalize_and_send(working_results, len(ports_to_check), "📊 Scan Results\nCombined Config Results", "Combined_Config_Results.txt", is_config=True)
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working configs: {len(working_results)}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
 def menu_option_5_mahsa():
     selection = input(Colors.BOLD + "\n[>] Choose protocol number (1-5): " + Colors.END).strip()
@@ -582,6 +594,7 @@ def menu_option_5_mahsa():
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
+        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -593,11 +606,14 @@ def menu_option_5_mahsa():
         SCAN_SETTINGS['workers']
     )
     finalize_and_send(working_results, total_ips, f"📊 Scan Results\nSpecial CDN Scanner [{profile_name}]", "Mahsa_Bypass_Results.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
 def menu_option_6_custom_scanner():
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
+        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -609,6 +625,8 @@ def menu_option_6_custom_scanner():
         SCAN_SETTINGS['workers']
     )
     finalize_and_send(working_results, total_ips, "📊 Scan Results\nCustom Dedicated Scanner Results", "Custom_Scanner_Results.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
 def menu_option_7_amir_tunneling():
     info_text = """Amir Tunneling Engine initialized successfully.
@@ -631,6 +649,7 @@ def menu_option_8_udp_tcp():
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
+        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
         return
     port_input = input(Colors.BOLD + "Enter Port to test (Default 443): " + Colors.END).strip()
     target_port = int(port_input) if port_input.isdigit() else 443
@@ -687,6 +706,9 @@ def menu_option_8_udp_tcp():
             send_to_bale(single_message)
             send_to_igap(single_message)
             time.sleep(0.5)
+            
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working results: {len(working_results)}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
 def menu_option_9_zeus_panel():
     while True:
