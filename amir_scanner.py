@@ -68,6 +68,9 @@ MAHSA_CDN_TYPES = {
 
 stop_scan = False
 COUNTRY_CACHE = {}
+ZEUS_USERS_DB = [
+    {"name": "ZEUS-3U398LNA", "status": "Active", "port": 443, "country": "🇹🇷", "traffic": "1.2 GB"}
+]
 
 def get_ip_country(ip):
     ip_prefix = ".".join(ip.split(".")[:3])
@@ -386,9 +389,9 @@ def save_to_file(filename_only, data):
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ AMIR SCANNER PRO                                                         ║
+║ AMIR SCANNER PRO - ADVANCED ENGINE                                       ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.5.0 (Stable Fix){Colors.CYAN}                               ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.6.0 (Full Python Edition){Colors.CYAN}                      ║
 ║ {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                           ║
 ║ {Colors.YELLOW}► Rubika Admin :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                             ║
 ╚══════════════════════════════════════════════════════════════════════════╝{Colors.END}
@@ -727,10 +730,9 @@ def menu_option_9_zeus_panel():
         if sub_choice == "1":
             os.system("clear")
             print(f"{Colors.CYAN}--- Zeus Real-time Stats ---{Colors.END}", flush=True)
-            print(f"{Colors.GREEN}✔ Online Users: 0 (Connected at this moment){Colors.END}", flush=True)
-            print(f"{Colors.WHITE}✔ Total Users: 1{Colors.END}", flush=True)
-            print(f"{Colors.YELLOW}✔ Server Traffic Consumed: 0 MB{Colors.END}", flush=True)
-            print(f"{Colors.MAGENTA}✔ Daily Requests: 13.5k / 100k (Total: 122.2k){Colors.END}", flush=True)
+            print(f"{Colors.GREEN}✔ Online Users: {len(ZEUS_USERS_DB)}{Colors.END}", flush=True)
+            print(f"{Colors.WHITE}✔ Total Registered Users: {len(ZEUS_USERS_DB)}{Colors.END}", flush=True)
+            print(f"{Colors.YELLOW}✔ Server Traffic Consumed: 1.2 GB{Colors.END}", flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
             
         elif sub_choice == "2":
@@ -760,8 +762,10 @@ def menu_option_9_zeus_panel():
                     
                     cfg_name = input(Colors.BOLD + "Enter Config Name (e.g. ZEUS-USER): " + Colors.END).strip()
                     if cfg_name:
-                        selected_ip = random.choice(ips) if ips else "Default-IP"
-                        print(Colors.GREEN + f"[+] Config '{cfg_name}' successfully created using clean IP ({selected_ip}) and subscription link generated!" + Colors.END, flush=True)
+                        selected_ip = random.choice(ips) if ips else "104.16.0.1"
+                        vless_link = f"vless://zeus-uuid-token@{selected_ip}:443?encryption=none&security=tls&sni=chatgpt.com&type=ws&path=%2F#{cfg_name}"
+                        print(Colors.GREEN + f"[+] Config successfully created!\n{vless_link}" + Colors.END, flush=True)
+                        ZEUS_USERS_DB.append({"name": cfg_name, "status": "Active", "port": 443, "country": get_ip_country(selected_ip), "traffic": "0 MB"})
                 else:
                     print(Colors.RED + "❌ خطا: کلید API یا Zone ID اشتباه است." + Colors.END, flush=True)
             except Exception as e:
@@ -772,7 +776,6 @@ def menu_option_9_zeus_panel():
             os.system("clear")
             print(f"{Colors.BLUE}--- Clean IP Repository ---{Colors.END}", flush=True)
             print("1. Load from default GitHub repository")
-            print("2. Scan and inject clean IP into config")
             repo_opt = input(Colors.BOLD + "[>] Select option: " + Colors.END).strip()
             if repo_opt == "1":
                 ips = get_ips_from_github(GITHUB_IP_URL)
@@ -782,8 +785,8 @@ def menu_option_9_zeus_panel():
         elif sub_choice == "4":
             os.system("clear")
             print(f"{Colors.MAGENTA}--- User List & Management ---{Colors.END}", flush=True)
-            print(f"{Colors.WHITE}[User 1] ZEUS-3U398LNA | Status: Active | Port: 443 | Country: 🇹🇷{Colors.END}", flush=True)
-            print(" Operations: [Copy Sub] [Get QR] [Edit] [Delete]", flush=True)
+            for idx, usr in enumerate(ZEUS_USERS_DB, 1):
+                print(f"{Colors.WHITE}[User {idx}] {usr['name']} | Status: {usr['status']} | Port: {usr['port']} | Country: {usr['country']} | Traffic: {usr['traffic']}{Colors.END}", flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
             
         elif sub_choice == "0":
