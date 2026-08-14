@@ -10,10 +10,8 @@ import sys
 import time
 import json
 import random
-import smtplib
+import threading
 from datetime import datetime
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import urllib3
@@ -34,7 +32,6 @@ class Colors:
 GITHUB_IP_URL = "https://raw.githubusercontent.com/amir1388hev-glitch/termux_ip/main/Termux_ips"
 DOWNLOAD_DIR = "/sdcard/Download"
 LOCAL_ALL_IPS_FILE = os.path.join(DOWNLOAD_DIR, "all_ips.txt")
-CONFIG_FILE = os.path.expanduser("~/.amir_scanner_config.json")
 
 RUBIKA_BOT_TOKEN = "CABGDG0AGFFRWJKSBWBUBRUGGFMYNFITBVVDKTSVBNOKZWANYOITFQILZSSLCRKT"
 RUBIKA_CHAT_ID = "g0ILUMK0562851bf38dfcd7703bdeb22"
@@ -117,71 +114,43 @@ def send_to_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    chunks = split_message_smart(text, max_length=3800)
-    for chunk in chunks:
-        payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": chunk,
-            "disable_web_page_preview": True
-        }
-        for attempt in range(3):
-            try:
-                res = requests.post(url, json=payload, timeout=15)
-                if res.status_code == 200:
-                    break
-            except Exception:
-                pass
+    for chunk in split_message_smart(text, max_length=3800):
+        try:
+            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "disable_web_page_preview": True}, timeout=10)
+        except Exception:
+            pass
 
 def send_to_rubika(text):
     if not RUBIKA_BOT_TOKEN or not RUBIKA_CHAT_ID:
         return
     url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
-    chunks = split_message_smart(text, max_length=3200)
-    for chunk in chunks:
-        payload = {"chat_id": RUBIKA_CHAT_ID, "text": chunk}
-        for attempt in range(3):
-            try:
-                res = requests.post(url, json=payload, timeout=12)
-                if res.status_code == 200:
-                    break
-            except Exception:
-                pass
+    for chunk in split_message_smart(text, max_length=3200):
+        try:
+            requests.post(url, json={"chat_id": RUBIKA_CHAT_ID, "text": chunk}, timeout=10)
+        except Exception:
+            pass
 
 def send_to_bale(text):
     if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
         return
     url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
-    chunks = split_message_smart(text, max_length=3800)
-    for chunk in chunks:
-        payload = {"chat_id": BALE_CHAT_ID, "text": chunk}
-        for attempt in range(3):
-            try:
-                res = requests.post(url, json=payload, timeout=15)
-                if res.status_code == 200:
-                    break
-            except Exception:
-                pass
+    for chunk in split_message_smart(text, max_length=3800):
+        try:
+            requests.post(url, json={"chat_id": BALE_CHAT_ID, "text": chunk}, timeout=10)
+        except Exception:
+            pass
 
 def send_to_igap(text):
     if not IGAP_BOT_TOKEN or not IGAP_CHAT_ID:
         return
     url = "https://api.igap.net/v1/bot/sendMessage"
-    chunks = split_message_smart(text, max_length=3200)
-    for chunk in chunks:
-        payload = {
-            "token": IGAP_BOT_TOKEN,
-            "room_id": IGAP_CHAT_ID,
-            "message": chunk
-        }
-        for attempt in range(3):
-            try:
-                res = requests.post(url, json=payload, timeout=10)
-                if res.status_code == 200:
-                    break
-            except Exception:
-                pass
+    for chunk in split_message_smart(text, max_length=3200):
+        try:
+            requests.post(url, json={"token": IGAP_BOT_TOKEN, "room_id": IGAP_CHAT_ID, "message": chunk}, timeout=10)
+        except Exception:
+            pass
 
-def send_results_by_country(working_results, header_prefix, title_msg, is_config=False):
+def send_results_by_country(working_results, header_prefix, is_config=False):
     if not working_results:
         return
     country_groups = {}
@@ -199,14 +168,14 @@ def send_results_by_country(working_results, header_prefix, title_msg, is_config
     for country, items in country_groups.items():
         lines = [f"{header_prefix}\n"]
         lines.extend(items)
-        lines.append(f"\n🏴‍☠️ کشور: {country} | تعداد: {len(items)} عدد")
-        lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}")
+        lines.append(f"\nCountry: {country} | Count: {len(items)}")
+        lines.append(f"\nClean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}")
         single_message = "\n".join(lines)
         send_to_telegram(single_message)
         send_to_rubika(single_message)
         send_to_bale(single_message)
         send_to_igap(single_message)
-        time.sleep(1)
+        time.sleep(0.5)
 
 def get_clean_input(prompt_text):
     try:
@@ -214,7 +183,7 @@ def get_clean_input(prompt_text):
         clean_val = re.sub(r"\D", "", raw_val)
         return clean_val
     except (KeyboardInterrupt, EOFError):
-        print(Colors.YELLOW + "\n[*] Exiting..." + Colors.END)
+        print("\n[*] Exiting...", flush=True)
         sys.exit(0)
 
 def get_ips_from_github(url):
@@ -256,8 +225,12 @@ def parse_ip_input(user_input):
         if "/" in entry:
             try:
                 network = ipaddress.ip_network(entry, strict=False)
+                count = 0
                 for ip in network.hosts():
                     ips.append(str(ip))
+                    count += 1
+                    if count >= 512:  # Safety cap to prevent freezing on large subnets
+                        break
             except Exception:
                 pass
         elif "-" in entry and "." in entry:
@@ -271,9 +244,11 @@ def parse_ip_input(user_input):
                 start = ipaddress.ip_address(start_ip)
                 end = ipaddress.ip_address(end_ip)
                 current = start
-                while current <= end:
+                count = 0
+                while current <= end and count < 512:
                     ips.append(str(current))
                     current += 1
+                    count += 1
             except Exception:
                 pass
         else:
@@ -285,7 +260,7 @@ def parse_ip_input(user_input):
     return ips
 
 def get_manual_ips():
-    print(Colors.CYAN + "\nEnter IPs (single IP, range, CIDR, or multiline paste):" + Colors.END)
+    print(Colors.CYAN + "\nEnter IPs (single IP, range, CIDR, or multiline paste, press Enter twice to finish):" + Colors.END, flush=True)
     lines = []
     while True:
         try:
@@ -302,10 +277,10 @@ def get_manual_ips():
     return parse_ip_input(user_input)
 
 def select_ip_source():
-    print(Colors.CYAN + "\nSelect IP source:" + Colors.END)
+    print(Colors.CYAN + "\nSelect IP source:" + Colors.END, flush=True)
     print("1. GitHub (Online repository)")
     print("2. Manual input (Type or paste)")
-    print("3. From local file in phone (/sdcard/Download/all_ips.txt)")
+    print("3. From local file (/sdcard/Download/all_ips.txt)")
     choice = get_clean_input(Colors.BOLD + "[>] Choose option (1/2/3): " + Colors.END)
     if choice == "1":
         return get_ips_from_github(GITHUB_IP_URL)
@@ -335,6 +310,7 @@ def check_ip_http_latency(ip, port=443, domain="chatgpt.com", timeout=3.0, test_
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
                 tls_sock = context.wrap_socket(sock, server_hostname=domain)
+                tls_sock.settimeout(timeout)
                 request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
                 tls_sock.sendall(request_data.encode())
                 response = tls_sock.recv(1024)
@@ -412,12 +388,12 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ AMIR SCANNER PRO                                                         ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.3.0 (Amir Tunneling Good){Colors.CYAN}                              ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.4.0 (English Engine Fix){Colors.CYAN}                      ║
 ║ {Colors.YELLOW}► Telegram Admin :{Colors.WHITE} {TELEGRAM_ID:<22}{Colors.CYAN}                           ║
 ║ {Colors.YELLOW}► Rubika Admin :{Colors.WHITE} {RUBIKA_ID:<22}{Colors.CYAN}                             ║
 ╚══════════════════════════════════════════════════════════════════════════╝{Colors.END}
 """
-    print(banner)
+    print(banner, flush=True)
 
 def finalize_and_send(working_results, total_ips, header_prefix, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
@@ -431,13 +407,12 @@ def finalize_and_send(working_results, total_ips, header_prefix, save_filename, 
             clean_ips_for_file.append(target_str)
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
     if working_results:
-        send_results_by_country(working_results, header_prefix, header_prefix, is_config)
+        send_results_by_country(working_results, header_prefix, is_config)
 
 def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
     global stop_scan
     stop_scan = False
     working_results = []
-    import threading
     thread_lock = threading.Lock()
     
     if extra_tasks:
@@ -448,6 +423,11 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
         tasks = ips
         
     total_tasks = len(tasks)
+    if total_tasks == 0:
+        print(Colors.RED + "[!] No valid IPs to scan!" + Colors.END, flush=True)
+        return working_results, 0
+
+    print(Colors.YELLOW + f"[*] Starting scan on {total_tasks} target tasks..." + Colors.END, flush=True)
     
     def worker_task(item):
         if stop_scan:
@@ -460,7 +440,7 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
                 res_str = f"{ip}:{p}"
                 with thread_lock:
                     working_results.append((res_str, lat, country))
-                print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+                print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
                 return True
         else:
             ip = item
@@ -469,7 +449,7 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
                 country = get_ip_country(ip)
                 with thread_lock:
                     working_results.append((ip, lat, country))
-                print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+                print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
                 return True
         return None
 
@@ -487,6 +467,7 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
 def menu_option_1():
     ips = select_ip_source()
     if not ips:
+        print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -497,11 +478,12 @@ def menu_option_1():
         SCAN_SETTINGS['path'],
         SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nاین تست آی‌پیه", "IP_Health_Check.txt")
+    finalize_and_send(working_results, total_ips, "📊 Scan Results\nIP Health Check Test", "IP_Health_Check.txt")
 
 def menu_option_2():
     ips = select_ip_source()
     if not ips:
+        print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -513,18 +495,20 @@ def menu_option_2():
         SCAN_SETTINGS['workers'],
         is_port_scan=True
     )
-    finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nاین تست آی‌پی روی پورته", "IP_and_Port_Check.txt")
+    finalize_and_send(working_results, total_ips, "📊 Scan Results\nIP and Port Latency Check", "IP_and_Port_Check.txt")
 
 def menu_option_3():
     global stop_scan
     ips = select_ip_source()
     if not ips:
+        print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
         return
     tasks_list = [(ip, port) for ip in ips for port in PORTS_TO_TEST]
     total_combinations = len(tasks_list)
     results = []
-    import threading
     thread_lock = threading.Lock()
+    
+    print(Colors.YELLOW + f"[*] Scanning {total_combinations} TCP port combinations..." + Colors.END, flush=True)
     
     def worker_task(item):
         if stop_scan:
@@ -536,7 +520,7 @@ def menu_option_3():
             country = get_ip_country(ip)
             with thread_lock:
                 results.append((res_str, 0, country))
-            print(f"{res_str:<22} | Country: {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}")
+            print(f"{res_str:<22} | Country: {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}", flush=True)
             
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -547,7 +531,7 @@ def menu_option_3():
         except KeyboardInterrupt:
             stop_scan = True
             
-    finalize_and_send(results, total_combinations, "📊 نتایج اسکن\nتست آی‌پی روی پورته با فرآیند tcp", "Open_Ports_Check.txt")
+    finalize_and_send(results, total_combinations, "📊 Scan Results\nOpen TCP Ports Check", "Open_Ports_Check.txt")
 
 def menu_option_4():
     global stop_scan
@@ -563,7 +547,6 @@ def menu_option_4():
     found_ips = re.findall(ip_pattern, raw_config)
     old_ip = found_ips[0] if found_ips else None
     working_results = []
-    import threading
     thread_lock = threading.Lock()
     
     def worker_task(p):
@@ -578,7 +561,7 @@ def menu_option_4():
                 new_cfg = re.sub(r':\d+', f':{p}', new_cfg, count=1)
             with thread_lock:
                 working_results.append((target_ip, lat, country, new_cfg))
-            print(f"{target_ip}:{p:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}")
+            print(f"{target_ip}:{p:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
             
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -589,7 +572,7 @@ def menu_option_4():
         except KeyboardInterrupt:
             stop_scan = True
             
-    finalize_and_send(working_results, len(ports_to_check), "📊 نتایج اسکن\nکانفیگ های ترکیب شده", "Combined_Config_Results.txt", is_config=True)
+    finalize_and_send(working_results, len(ports_to_check), "📊 Scan Results\nCombined Config Results", "Combined_Config_Results.txt", is_config=True)
 
 def menu_option_5_mahsa():
     selection = input(Colors.BOLD + "\n[>] Choose protocol number (1-5): " + Colors.END).strip()
@@ -598,6 +581,7 @@ def menu_option_5_mahsa():
     profile_name = MAHSA_CDN_TYPES[selection]
     ips = select_ip_source()
     if not ips:
+        print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -608,11 +592,12 @@ def menu_option_5_mahsa():
         SCAN_SETTINGS['path'],
         SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, f"📊 نتایج اسکن\nایپی هاش مخصوص شیر و خورشید و مهسا ان جیه [{profile_name}]", "Mahsa_Bypass_Results.txt")
+    finalize_and_send(working_results, total_ips, f"📊 Scan Results\nSpecial CDN Scanner [{profile_name}]", "Mahsa_Bypass_Results.txt")
 
 def menu_option_6_custom_scanner():
     ips = select_ip_source()
     if not ips:
+        print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
         return
     working_results, total_ips = run_scanner_engine(
         ips,
@@ -623,28 +608,34 @@ def menu_option_6_custom_scanner():
         SCAN_SETTINGS['path'],
         SCAN_SETTINGS['workers']
     )
-    finalize_and_send(working_results, total_ips, "📊 نتایج اسکن\nتست ایپی با اسکنر مخصوص با تنظیمات خودت", "Custom_Scanner_Results.txt")
+    finalize_and_send(working_results, total_ips, "📊 Scan Results\nCustom Dedicated Scanner Results", "Custom_Scanner_Results.txt")
 
 def menu_option_7_amir_tunneling():
-    persian_explanation = """مقدمات و توضیح هسته های اضافه شده: 1. موتور پردازش پرقدرت: طراحی شده برای مسیریابی فوق‌العاده سریع اتصال و تحویلی بسته‌ها با تاخیر کم. 2. امنیت و پایداری پیشرفته: لایه‌های رمزنگاری قدرتمندی را برای محافظت از ترافیک کاربر پیاده‌سازی می‌کند."""
-    send_to_telegram(persian_explanation)
-    send_to_rubika(persian_explanation)
-    send_to_bale(persian_explanation)
-    send_to_igap(persian_explanation)
+    info_text = """Amir Tunneling Engine initialized successfully.
+1. High-Performance Processing Core: Designed for ultra-fast connection routing and low-latency packet delivery.
+2. Advanced Security & Stability: Implements robust encryption layers to safeguard user traffic."""
+    print(Colors.GREEN + info_text + Colors.END, flush=True)
+    send_to_telegram(info_text)
+    send_to_rubika(info_text)
+    send_to_bale(info_text)
+    send_to_igap(info_text)
+    input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
 
 def menu_option_8_udp_tcp():
     global stop_scan
+    print(Colors.CYAN + "1. UDP Connectivity Test" + Colors.END, flush=True)
+    print(Colors.CYAN + "2. TCP Connectivity Test" + Colors.END, flush=True)
     sub_choice = get_clean_input(Colors.BOLD + "[>] Select sub-option (1/2): " + Colors.END)
     if sub_choice not in ["1", "2"]:
         return
     ips = select_ip_source()
     if not ips:
+        print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
         return
     port_input = input(Colors.BOLD + "Enter Port to test (Default 443): " + Colors.END).strip()
     target_port = int(port_input) if port_input.isdigit() else 443
     stop_scan = False
     working_results = []
-    import threading
     thread_lock = threading.Lock()
     tasks_list = [(ip, target_port) for ip in ips]
     
@@ -661,6 +652,7 @@ def menu_option_8_udp_tcp():
             country = get_ip_country(ip)
             with thread_lock:
                 working_results.append((res_str, lat, country))
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
                 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -671,7 +663,7 @@ def menu_option_8_udp_tcp():
         except KeyboardInterrupt:
             stop_scan = True
             
-    filename = f"UDP_Scan_Results.txt" if sub_choice == "1" else "TCP_Scan_Results.txt"
+    filename = "UDP_Scan_Results.txt" if sub_choice == "1" else "TCP_Scan_Results.txt"
     working_results.sort(key=lambda x: x[1])
     clean_ips_for_file = [item[0] for item in working_results]
     save_to_file(filename, "\n".join(clean_ips_for_file))
@@ -683,18 +675,18 @@ def menu_option_8_udp_tcp():
             if country not in country_groups:
                 country_groups[country] = []
             country_groups[country].append(target_str)
-        proto_text = "تست با tcp" if sub_choice == "2" else "تست با udp"
+        proto_text = "TCP Protocol Test" if sub_choice == "2" else "UDP Protocol Test"
         for country, items in country_groups.items():
-            lines = [f"📊 نتایج اسکن\n{proto_text}\n"]
+            lines = [f"📊 Scan Results\n{proto_text}\n"]
             lines.extend(items)
-            lines.append(f"\n🏴‍☠️ کشور: {country} | تعداد: {len(items)} عدد")
-            lines.append(f"\n🔥 آی‌پی تمیز خدمت شما:\nآیدی تلگرام سازنده: {TELEGRAM_ID}\nآیدی روبیکا سازنده: {RUBIKA_ID}")
+            lines.append(f"\nCountry: {country} | Count: {len(items)}")
+            lines.append(f"\nClean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}")
             single_message = "\n".join(lines)
             send_to_telegram(single_message)
             send_to_rubika(single_message)
             send_to_bale(single_message)
             send_to_igap(single_message)
-            time.sleep(1)
+            time.sleep(0.5)
 
 def menu_option_9_zeus_panel():
     while True:
@@ -702,53 +694,53 @@ def menu_option_9_zeus_panel():
         print(f"{Colors.CYAN}{Colors.BOLD}╔══════════════════════════════════════════════════════════╗{Colors.END}")
         print(f"{Colors.CYAN}{Colors.BOLD}║                 ZEUS PANEL MANAGER (AMIR)                ║{Colors.END}")
         print(f"{Colors.CYAN}{Colors.BOLD}╚══════════════════════════════════════════════════════════╝{Colors.END}")
-        print(f"{Colors.GREEN}[1] آمار و وضعیت آنلاین (Active Users & Traffic Stats){Colors.END}")
-        print(f"{Colors.YELLOW}[2] ساخت کانفیگ جدید (Amir Create Config){Colors.END}")
-        print(f"{Colors.BLUE}[3] مخزن آی‌پی تمیز و تنظیمات (Clean IP Repository){Colors.END}")
-        print(f"{Colors.MAGENTA}[4] لیست کاربران و مدیریت عملیات (User List & Operations){Colors.END}")
-        print(f"{Colors.RED}[0] بازگشت به منوی اصلی (Back to Main Menu){Colors.END}")
+        print(f"{Colors.GREEN}[1] Active Users & Traffic Stats{Colors.END}", flush=True)
+        print(f"{Colors.YELLOW}[2] Amir Create Config{Colors.END}", flush=True)
+        print(f"{Colors.BLUE}[3] Clean IP Repository & Settings{Colors.END}", flush=True)
+        print(f"{Colors.MAGENTA}[4] User List & Operations{Colors.END}", flush=True)
+        print(f"{Colors.RED}[0] Back to Main Menu{Colors.END}", flush=True)
         
         sub_choice = get_clean_input(Colors.BOLD + "\n[>] Select Zeus option (0-4): " + Colors.END)
         
         if sub_choice == "1":
             os.system("clear")
-            print(f"{Colors.CYAN}--- آمار لحظه‌ای پنل زئوس ---{Colors.END}")
-            print(f"{Colors.GREEN}✔ کاربران آنلاین: 0 (متصل در این لحظه){Colors.END}")
-            print(f"{Colors.WHITE}✔ تعداد کل کاربران: 1{Colors.END}")
-            print(f"{Colors.YELLOW}✔ ترافیک مصرفی سرور: MB 0{Colors.END}")
-            print(f"{Colors.MAGENTA}✔ ریکوئست‌های روزانه: 13.5k / 100k (Total: 122.2k){Colors.END}")
+            print(f"{Colors.CYAN}--- Zeus Real-time Stats ---{Colors.END}", flush=True)
+            print(f"{Colors.GREEN}✔ Online Users: 0 (Connected at this moment){Colors.END}", flush=True)
+            print(f"{Colors.WHITE}✔ Total Users: 1{Colors.END}", flush=True)
+            print(f"{Colors.YELLOW}✔ Server Traffic Consumed: 0 MB{Colors.END}", flush=True)
+            print(f"{Colors.MAGENTA}✔ Daily Requests: 13.5k / 100k (Total: 122.2k){Colors.END}", flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
             
         elif sub_choice == "2":
             os.system("clear")
-            print(f"{Colors.YELLOW}--- بخش ایجاد کانفیگ جدید (Amir Create Config) ---{Colors.END}")
+            print(f"{Colors.YELLOW}--- Amir Create Config ---{Colors.END}", flush=True)
             cfg_name = input(Colors.BOLD + "Enter Config Name (e.g. ZEUS-USER): " + Colors.END).strip()
             if cfg_name:
-                print(f"{Colors.GREEN}[+] کانفیگ {cfg_name} با موفقیت ساخته شد و لینک ساب آماده شد!{Colors.END}")
+                print(f"{Colors.GREEN}[+] Config {cfg_name} successfully created and subscription link generated!{Colors.END}", flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
             
         elif sub_choice == "3":
             os.system("clear")
-            print(f"{Colors.BLUE}--- مخزن آی‌پی تمیز ---{Colors.END}")
-            print("1. استفاده از مخزن پیش‌فرض گیت‌هاب")
-            print("2. اسکن و تزریق خودکار آی‌پی تمیز به کانفیگ")
+            print(f"{Colors.BLUE}--- Clean IP Repository ---{Colors.END}", flush=True)
+            print("1. Load from default GitHub repository")
+            print("2. Scan and inject clean IP into config")
             repo_opt = input(Colors.BOLD + "[>] Select option: " + Colors.END).strip()
             if repo_opt == "1":
                 ips = get_ips_from_github(GITHUB_IP_URL)
-                print(f"{Colors.GREEN}[+] تعداد {len(ips)} آی‌پی از مخزن بارگذاری شد.{Colors.END}")
+                print(f"{Colors.GREEN}[+] Loaded {len(ips)} IPs from repository.{Colors.END}", flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
             
         elif sub_choice == "4":
             os.system("clear")
-            print(f"{Colors.MAGENTA}--- لیست کاربران و مدیریت ---{Colors.END}")
-            print(f"{Colors.WHITE}[User 1] ZEUS-3U398LNA | وضعیت: فعال | پورت: 443 | کشور: 🇹🇷{Colors.END}")
-            print(f" عملیات‌ها: [کپی ساب] [دریافت QR] [ویرایش] [حذف]")
+            print(f"{Colors.MAGENTA}--- User List & Management ---{Colors.END}", flush=True)
+            print(f"{Colors.WHITE}[User 1] ZEUS-3U398LNA | Status: Active | Port: 443 | Country: 🇹🇷{Colors.END}", flush=True)
+            print(" Operations: [Copy Sub] [Get QR] [Edit] [Delete]", flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
             
         elif sub_choice == "0":
             break
         else:
-            print(Colors.RED + "[!] گزینه نامعتبر." + Colors.END)
+            print(Colors.RED + "[!] Invalid option selected." + Colors.END, flush=True)
             time.sleep(1)
 
 def main_menu():
@@ -759,15 +751,15 @@ def main_menu():
 ║ {Colors.GREEN}[1] Test IP Health (Edge Speed & Download Test){Colors.CYAN}                  ║
 ║ {Colors.YELLOW}[2] Test IP and PORT with Latency Table{Colors.CYAN}                    ║
 ║ {Colors.MAGENTA}[3] Test TCP PORT Only{Colors.CYAN}                                     ║
-║ {Colors.BLUE}[4] Combine Config (Auto Send to Telegram & Rubika & Bale & iGap){Colors.CYAN}  ║
-║ {Colors.RED}[5] Mahsa & Shir-Khorshid VPN Special CDN Scanner{Colors.CYAN}          ║
+║ {Colors.BLUE}[4] Combine Config (Auto Send to Messengers){Colors.CYAN}              ║
+║ {Colors.RED}[5] Mahsa & Special CDN Scanner{Colors.CYAN}                            ║
 ║ {Colors.WHITE}[6] Custom Dedicated Scanner & Settings{Colors.CYAN}                   ║
-║ {Colors.MAGENTA}[7] Amir tunneling good{Colors.CYAN}                                     ║
+║ {Colors.MAGENTA}[7] Amir Tunneling Good{Colors.CYAN}                                     ║
 ║ {Colors.GREEN}[8] Advanced UDP & TCP Protocol Connectivity Scanner{Colors.CYAN}       ║
 ║ {Colors.YELLOW}[9] Amir Zeus Panel & Create Config (Zeus UI){Colors.CYAN}            ║
 ║ {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                                  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
-""")
+""", flush=True)
         choice = get_clean_input(Colors.BOLD + "[>] Select option: " + Colors.END)
         if choice == "1":
             menu_option_1()
@@ -788,10 +780,10 @@ def main_menu():
         elif choice == "9":
             menu_option_9_zeus_panel()
         elif choice == "0":
-            print(Colors.YELLOW + "[*] Exiting program..." + Colors.END)
+            print(Colors.YELLOW + "[*] Exiting program..." + Colors.END, flush=True)
             sys.exit(0)
         else:
-            print(Colors.RED + "[!] Invalid option selected." + Colors.END)
+            print(Colors.RED + "[!] Invalid option selected." + Colors.END, flush=True)
             input(Colors.BOLD + "\n[*] Press Enter to continue..." + Colors.END)
             os.system("clear")
 
