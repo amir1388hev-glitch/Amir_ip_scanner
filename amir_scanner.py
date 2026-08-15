@@ -44,14 +44,13 @@ IGAP_CHAT_ID = "@ipscanner"
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
-# تنظیمات پیش‌فرض ثابت شده روی خواسته شما (SNI: speed.cloudflare.com و Timeout: 1.7)
+# تنظیمات پیش‌فرض ثابت شده (SNI: speed.cloudflare.com و Timeout: 1.7)
 SCAN_SETTINGS = {
     "domain": "speed.cloudflare.com",
     "path": "/",
     "port": 443,
     "timeout": 1.7,
     "workers": 20,
-    "test_download": True
 }
 
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
@@ -274,8 +273,8 @@ def select_ip_source():
     else:
         return []
 
-# تست ساختاریافته و همگانی Xray روی تمام گزینه‌ها با Timeout پیش‌فرض 1.7 ثانیه
-def check_ip_xray_strict(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, path="/"):
+# اسکنر اختصاصی متناسب با ساختار فرانتینگ CDN و اتصال پایدار در نت ملی (شیر و خورشید / MahsaNG)
+def check_ip_mahsang_fronting(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, path="/"):
     for attempt in range(2):
         start_time = time.time()
         try:
@@ -283,39 +282,29 @@ def check_ip_xray_strict(ip, port=443, domain="speed.cloudflare.com", timeout=1.
             sock.settimeout(timeout)
             sock.connect((ip, port))
             
-            if port in NON_TLS_PORTS:
-                request_data = f"GET {path} HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\nConnection: close\r\n\r\n"
-                sock.sendall(request_data.encode())
-                response = sock.recv(512)
-                sock.close()
-                if not response or b"HTTP" not in response:
-                    continue
-            else:
-                context = ssl.create_default_context()
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-                
-                tls_sock = context.wrap_socket(sock, server_hostname=domain)
-                tls_sock.settimeout(timeout)
-                
-                # پکت اختصاصی سازگار با هندشک Xray (VLESS/VMess/Trojan)
-                xray_payload = (
-                    f"GET {path} HTTP/1.1\r\n"
-                    f"Host: {domain}\r\n"
-                    f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
-                    f"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
-                    f"Connection: close\r\n\r\n"
-                )
-                tls_sock.sendall(xray_payload.encode())
-                response = tls_sock.recv(1024)
-                tls_sock.close()
-                sock.close()
-                
-                if not response or (b"HTTP" not in response and b"Cloudflare" not in response and len(response) < 10):
-                    continue
-                    
-            latency = (time.time() - start_time) * 1000
-            return round(latency, 1)
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            
+            tls_sock = context.wrap_socket(sock, server_hostname=domain)
+            tls_sock.settimeout(timeout)
+            
+            # پکت درخواست سازگار با فرانتینگ CDN و بایپس دقیق در نت ملی
+            fronting_payload = (
+                f"GET {path} HTTP/1.1\r\n"
+                f"Host: {domain}\r\n"
+                f"User-Agent: Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36\r\n"
+                f"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+                f"Connection: close\r\n\r\n"
+            )
+            tls_sock.sendall(fronting_payload.encode())
+            response = tls_sock.recv(1024)
+            tls_sock.close()
+            sock.close()
+            
+            if response and (b"HTTP" in response or b"Cloudflare" in response or len(response) > 0):
+                latency = (time.time() - start_time) * 1000
+                return round(latency, 1)
         except Exception:
             if attempt == 1:
                 return None
@@ -333,10 +322,10 @@ def save_to_file(filename_only, data):
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ AMIR SCANNER PRO - XRAY ENGINE (SNI: speed.cloudflare.com | TO: 1.7s)    ║
+║ AMIR SCANNER PRO - MAHSANG & XRAY ENGINE (SNI: speed.cloudflare.com)     ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.8.0 (Integrated Xray Mode){Colors.CYAN}                      ║
-╚══════════════════════════════════════════════════════════════════════════╝{Colors.END}
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.9.0 (MahsaNG Fronting & CDN Engine){Colors.CYAN}              ║
+╚══════════════════════════════════════════════════════════════════════════╝
 """
     print(banner, flush=True)
 
@@ -354,7 +343,7 @@ def finalize_and_send(working_results, header_prefix, port_tested, save_filename
     if working_results:
         send_results_by_country(working_results, header_prefix, port_tested, is_config)
 
-def menu_option_1_mahsa():
+def menu_option_1_mahsang():
     global stop_scan
     ips = select_ip_source()
     if not ips:
@@ -371,18 +360,18 @@ def menu_option_1_mahsa():
     working_results = []
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"[*] Scanning {len(ips)} IPs with Xray Engine (Port: {port}, SNI: {domain}, Timeout: {timeout}s)..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Scanning {len(ips)} IPs for MahsaNG CDN Fronting (Port: {port}, SNI: {domain}, Timeout: {timeout}s)..." + Colors.END, flush=True)
     
     def worker_task(ip):
         if stop_scan:
             return
-        lat = check_ip_xray_strict(ip, port=port, domain=domain, timeout=timeout, path="/")
+        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path="/")
         if lat is not None:
             country = get_ip_country(ip)
-            res_str = f"{ip}:{port}"
+            res_str = f"{ip}" # خروجی به صورت IP خالص برای قرارگیری مستقیم در بخش CDN IP اپلیکیشن MahsaNG
             with thread_lock:
                 working_results.append((res_str, lat, country))
-            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[XRAY OK]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[MAHSANG OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
@@ -393,8 +382,8 @@ def menu_option_1_mahsa():
         except KeyboardInterrupt:
             stop_scan = True
 
-    header = f"📊 Scan Results\nMahsa & Xray CDN Scanner"
-    finalize_and_send(working_results, header, port, "Mahsa_Bypass_Results.txt")
+    header = f"📊 Scan Results\nMahsaNG & CDN Fronting (شیر و خورشید)"
+    finalize_and_send(working_results, header, port, "MahsaNG_CDN_IPs.txt")
     print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
@@ -414,7 +403,7 @@ def menu_option_2_xray():
     
     print(Colors.YELLOW + f"[*] Testing Xray Config with IP {target_ip} on Port {port} (SNI: {SCAN_SETTINGS['domain']})..." + Colors.END, flush=True)
     
-    lat = check_ip_xray_strict(target_ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], path=SCAN_SETTINGS['path'])
+    lat = check_ip_mahsang_fronting(target_ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], path=SCAN_SETTINGS['path'])
     
     working_results = []
     if lat is not None:
@@ -427,7 +416,7 @@ def menu_option_2_xray():
         working_results.append((target_ip, lat, country, new_cfg))
         print(f"{target_ip}:{port:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[XRAY CONNECTED]{Colors.END}", flush=True)
     else:
-        print(Colors.RED + "[-] Target IP failed Xray strict handshake test." + Colors.END, flush=True)
+        print(Colors.RED + "[-] Target IP failed strict handshake test." + Colors.END, flush=True)
         
     header = f"📊 Scan Results\nXray Config Dedicated Scanner"
     finalize_and_send(working_results, header, port, "Xray_Config_Results.txt", is_config=True)
@@ -451,18 +440,18 @@ def menu_option_3_edge():
     working_results = []
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"[*] Starting Edge IP Xray Scanner on {len(ips)} IPs (Port: {port}, SNI: {domain})..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Starting Edge IP Scanner on {len(ips)} IPs (Port: {port}, SNI: {domain})..." + Colors.END, flush=True)
     
     def worker_task(ip):
         if stop_scan:
             return
-        lat = check_ip_xray_strict(ip, port=port, domain=domain, timeout=timeout, path="/")
+        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path="/")
         if lat is not None:
             country = get_ip_country(ip)
             res_str = f"{ip}:{port}"
             with thread_lock:
                 working_results.append((res_str, lat, country))
-            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[XRAY OK]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[EDGE OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
@@ -473,7 +462,7 @@ def menu_option_3_edge():
         except KeyboardInterrupt:
             stop_scan = True
 
-    header = f"📊 Scan Results\nEdge IP Scanner (Xray Handshake Mode)"
+    header = f"📊 Scan Results\nEdge IP Scanner (Speed Test Mode)"
     finalize_and_send(working_results, header, port, "Edge_Scanner_Results.txt")
     print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
@@ -483,15 +472,15 @@ def main_menu():
         print_banner()
         print(f"""{Colors.CYAN}
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ {Colors.GREEN}[1] Mahsa & Xray CDN Scanner{Colors.CYAN}                              ║
+║ {Colors.GREEN}[1] MahsaNG & CDN Fronting Scanner (شیر و خورشید){Colors.CYAN}             ║
 ║ {Colors.YELLOW}[2] Xray Config Dedicated Scanner{Colors.CYAN}                          ║
-║ {Colors.MAGENTA}[3] Edge IP Xray Scanner (Speed Test){Colors.CYAN}                      ║
+║ {Colors.MAGENTA}[3] Edge IP Scanner (Speed Test){Colors.CYAN}                          ║
 ║ {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                                  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """, flush=True)
         choice = get_clean_input(Colors.BOLD + "[>] Select option: " + Colors.END)
         if choice == "1":
-            menu_option_1_mahsa()
+            menu_option_1_mahsang()
         elif choice == "2":
             menu_option_2_xray()
         elif choice == "3":
