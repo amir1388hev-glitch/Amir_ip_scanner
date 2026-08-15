@@ -8,6 +8,8 @@ import socket
 import ssl
 import sys
 import time
+import json
+import random
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -42,7 +44,31 @@ IGAP_CHAT_ID = "@ipscanner"
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
+SCAN_SETTINGS = {
+    "domain": "speed.cloudflare.com",
+    "path": "/",
+    "port": 443,
+    "timeout": 1.7,
+    "workers": 20,
+}
+
 stop_scan = False
+COUNTRY_CACHE = {}
+
+def get_ip_country(ip):
+    ip_prefix = ".".join(ip.split(".")[:3])
+    if ip_prefix in COUNTRY_CACHE:
+        return COUNTRY_CACHE[ip_prefix]
+    try:
+        res = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=3)
+        if res.status_code == 200:
+            country = res.json().get("country", "Unknown")
+            if country and country != "Unknown":
+                COUNTRY_CACHE[ip_prefix] = country
+                return country
+    except Exception:
+        pass
+    return "Unknown"
 
 def split_message_smart(text, max_length=3500):
     lines = text.split("\n")
@@ -61,46 +87,68 @@ def split_message_smart(text, max_length=3500):
         chunks.append("\n".join(current_chunk))
     return chunks
 
-def send_to_all_messengers(text):
-    success_any = False
+def send_to_telegram(text):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    success = False
     for chunk in split_message_smart(text, max_length=3800):
-        # تلگرام
         try:
-            if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "disable_web_page_preview": True}, timeout=10)
-                if res.status_code == 200:
-                    success_any = True
+            res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "disable_web_page_preview": True}, timeout=10)
+            if res.status_code == 200:
+                success = True
         except Exception:
             pass
-        # روبیکا
+    return success
+
+def send_to_rubika(text):
+    if not RUBIKA_BOT_TOKEN or not RUBIKA_CHAT_ID:
+        return False
+    url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
+    success = False
+    for chunk in split_message_smart(text, max_length=3200):
         try:
-            if RUBIKA_BOT_TOKEN and RUBIKA_CHAT_ID:
-                url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
-                res = requests.post(url, json={"chat_id": RUBIKA_CHAT_ID, "text": chunk}, timeout=10)
-                if res.status_code == 200:
-                    success_any = True
+            res = requests.post(url, json={"chat_id": RUBIKA_CHAT_ID, "text": chunk}, timeout=10)
+            if res.status_code == 200:
+                success = True
         except Exception:
             pass
-        # بله
+    return success
+
+def send_to_bale(text):
+    if not BALE_BOT_TOKEN or not BALE_CHAT_ID:
+        return False
+    url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
+    success = False
+    for chunk in split_message_smart(text, max_length=3800):
         try:
-            if BALE_BOT_TOKEN and BALE_CHAT_ID:
-                url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
-                res = requests.post(url, json={"chat_id": BALE_CHAT_ID, "text": chunk}, timeout=10)
-                if res.status_code == 200:
-                    success_any = True
+            res = requests.post(url, json={"chat_id": BALE_CHAT_ID, "text": chunk}, timeout=10)
+            if res.status_code == 200:
+                success = True
         except Exception:
             pass
-        # ایگپ
+    return success
+
+def send_to_igap(text):
+    if not IGAP_BOT_TOKEN or not IGAP_CHAT_ID:
+        return False
+    url = "https://api.igap.net/v1/bot/sendMessage"
+    success = False
+    for chunk in split_message_smart(text, max_length=3200):
         try:
-            if IGAP_BOT_TOKEN and IGAP_CHAT_ID:
-                url = "https://api.igap.net/v1/bot/sendMessage"
-                res = requests.post(url, json={"token": IGAP_BOT_TOKEN, "room_id": IGAP_CHAT_ID, "message": chunk}, timeout=10)
-                if res.status_code == 200:
-                    success_any = True
+            res = requests.post(url, json={"token": IGAP_BOT_TOKEN, "room_id": IGAP_CHAT_ID, "message": chunk}, timeout=10)
+            if res.status_code == 200:
+                success = True
         except Exception:
             pass
-    return success_any
+    return success
+
+def send_to_all_messengers(text):
+    t_ok = send_to_telegram(text)
+    r_ok = send_to_rubika(text)
+    b_ok = send_to_bale(text)
+    i_ok = send_to_igap(text)
+    return t_ok or r_ok or b_ok or i_ok
 
 def get_clean_input(prompt_text):
     try:
@@ -189,7 +237,38 @@ def select_ip_source():
     else:
         return []
 
-def check_ip_connection(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, path="/"):
+def configure_scanner_settings():
+    global SCAN_SETTINGS
+    # مقادیر پیش‌فرض درخواستی شما
+    SCAN_SETTINGS["domain"] = "speed.cloudflare.com"
+    SCAN_SETTINGS["workers"] = 20
+    SCAN_SETTINGS["timeout"] = 1.7
+    SCAN_SETTINGS["port"] = 443
+
+    print(Colors.CYAN + "\n--- Scanner Configuration ---" + Colors.END, flush=True)
+    try:
+        domain_input = input(Colors.BOLD + f"Enter SNI / Domain [Default: {SCAN_SETTINGS['domain']}]: " + Colors.END).strip()
+        if domain_input:
+            SCAN_SETTINGS["domain"] = domain_input
+            
+        port_input = input(Colors.BOLD + f"Enter Port [Default: {SCAN_SETTINGS['port']}]: " + Colors.END).strip()
+        if port_input.isdigit():
+            SCAN_SETTINGS["port"] = int(port_input)
+
+        workers_input = input(Colors.BOLD + f"Enter Workers / Threads [Default: {SCAN_SETTINGS['workers']}]: " + Colors.END).strip()
+        if workers_input.isdigit():
+            SCAN_SETTINGS["workers"] = int(workers_input)
+        
+        timeout_input = input(Colors.BOLD + f"Enter Timeout (seconds) [Default: {SCAN_SETTINGS['timeout']}]: " + Colors.END).strip()
+        if timeout_input:
+            try:
+                SCAN_SETTINGS["timeout"] = float(timeout_input)
+            except ValueError:
+                pass
+    except Exception:
+        pass
+
+def check_ip_mahsang_fronting(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, path="/"):
     for attempt in range(2):
         start_time = time.time()
         try:
@@ -204,13 +283,14 @@ def check_ip_connection(ip, port=443, domain="speed.cloudflare.com", timeout=1.7
             tls_sock = context.wrap_socket(sock, server_hostname=domain)
             tls_sock.settimeout(timeout)
             
-            payload = (
+            fronting_payload = (
                 f"GET {path} HTTP/1.1\r\n"
                 f"Host: {domain}\r\n"
                 f"User-Agent: Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36\r\n"
+                f"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
                 f"Connection: close\r\n\r\n"
             )
-            tls_sock.sendall(payload.encode())
+            tls_sock.sendall(fronting_payload.encode())
             response = tls_sock.recv(1024)
             tls_sock.close()
             sock.close()
@@ -235,40 +315,69 @@ def save_to_file(filename_only, data):
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ AMIR SCANNER PRO - CLEAN & FAST ENGINE                                   ║
+║ AMIR SCANNER PRO - MAHSANG & XRAY ENGINE                                 ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v3.2.0 (Messenger Fix Mode){Colors.CYAN}                          ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v3.0.0 (Custom Terminal & Messenger Mode){Colors.CYAN}           ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
     print(banner, flush=True)
 
-def run_scanner_process(scanner_title, save_filename):
+def finalize_and_send(working_results, dead_count, header_prefix, port_tested, save_filename, is_config=False):
+    working_results.sort(key=lambda x: x[1])
+    clean_ips_for_file = []
+    telegram_lines = []
+    
+    for item in working_results:
+        if is_config:
+            ip, lat, country, cfg_str = item
+            clean_ips_for_file.append(cfg_str)
+            telegram_lines.append(ip)
+        else:
+            target_str, lat, country = item
+            clean_ips_for_file.append(target_str)
+            # فقط آی‌پی بدون پورت در پیام‌رسان‌ها قرار می‌گیرد
+            ip_only = target_str.split(":")[0]
+            telegram_lines.append(ip_only)
+            
+    save_to_file(save_filename, "\n".join(clean_ips_for_file))
+    
+    if working_results or dead_count > 0:
+        total_working = len(working_results)
+        msg_lines = [
+            f"{header_prefix}",
+            f"Port Tested: {port_tested}",
+            f"SNI / Domain: {SCAN_SETTINGS['domain']}\n"
+        ]
+        msg_lines.extend(telegram_lines)
+        msg_lines.extend([
+            f"\nTotal Working: {total_working} | Total Dead: {dead_count}",
+            f"Clean IPs provided by:",
+            f"Telegram Admin: {TELEGRAM_ID}",
+            f"Rubika Admin: {RUBIKA_ID}"
+        ])
+        
+        final_message = "\n".join(msg_lines)
+        print(Colors.YELLOW + "\n[*] Sending results to messengers..." + Colors.END, flush=True)
+        if send_to_all_messengers(final_message):
+            print(Colors.GREEN + "[+] Messengers: Sent Successfully ✅" + Colors.END, flush=True)
+        else:
+            print(Colors.RED + "[-] Messengers: Failed to Send ❌" + Colors.END, flush=True)
+
+def menu_option_1_mahsang():
     global stop_scan
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
         input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
         return
-
-    print(Colors.CYAN + "\n--- Scanner Configuration ---" + Colors.END, flush=True)
-    try:
-        domain_input = input(Colors.BOLD + "Enter SNI / Domain [Default: speed.cloudflare.com]: " + Colors.END).strip()
-        domain = domain_input if domain_input else "speed.cloudflare.com"
-        
-        port_input = input(Colors.BOLD + "Enter Port [Default: 443]: " + Colors.END).strip()
-        port = int(port_input) if port_input.isdigit() else 443
-
-        workers_input = input(Colors.BOLD + "Enter Workers / Threads [Default: 20]: " + Colors.END).strip()
-        workers = int(workers_input) if workers_input.isdigit() else 20
-        
-        timeout_input = input(Colors.BOLD + "Enter Timeout (seconds) [Default: 1.7]: " + Colors.END).strip()
-        timeout = float(timeout_input) if timeout_input else 1.7
-    except Exception:
-        domain = "speed.cloudflare.com"
-        port = 443
-        workers = 20
-        timeout = 1.7
-
+    
+    configure_scanner_settings()
+    
+    port = SCAN_SETTINGS['port']
+    domain = SCAN_SETTINGS['domain']
+    timeout = SCAN_SETTINGS['timeout']
+    workers = SCAN_SETTINGS['workers']
+    
     stop_scan = False
     working_results = []
     dead_count = 0
@@ -280,10 +389,12 @@ def run_scanner_process(scanner_title, save_filename):
         nonlocal dead_count
         if stop_scan:
             return
-        lat = check_ip_connection(ip, port=port, domain=domain, timeout=timeout, path="/")
+        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path=SCAN_SETTINGS['path'])
         with thread_lock:
             if lat is not None:
-                working_results.append((ip, lat))
+                country = get_ip_country(ip)
+                res_str = f"{ip}"
+                working_results.append((res_str, lat, country))
                 print(f"{ip:<22} | {str(lat)+'ms':<10} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
             else:
                 dead_count += 1
@@ -298,38 +409,109 @@ def run_scanner_process(scanner_title, save_filename):
         except KeyboardInterrupt:
             stop_scan = True
 
-    working_results.sort(key=lambda x: x[1])
-    total_working = len(working_results)
+    header = f"📊 Scan Results\nMahsaNG & CDN Fronting (شیر و خورشید)"
+    finalize_and_send(working_results, dead_count, header, port, "MahsaNG_CDN_IPs.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Working: {len(working_results)} | Dead: {dead_count}" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
+
+def menu_option_2_xray():
+    global stop_scan
+    raw_config = input(Colors.BOLD + "Enter Raw Config (VLESS / VMess / Trojan): " + Colors.END).strip()
+    if not raw_config:
+        return
+    target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
+    if not target_ip:
+        return
+        
+    configure_scanner_settings()
+    port = SCAN_SETTINGS['port']
     
-    clean_ips_for_file = [item[0] for item in working_results]
-    save_to_file(save_filename, "\n".join(clean_ips_for_file))
-
-    if working_results:
-        msg_lines = [
-            f"📊 {scanner_title}",
-            f"Port Tested: {port}",
-            f"SNI / Domain: {domain}",
-            ""
-        ]
-        for ip, lat in working_results:
-            msg_lines.append(ip)
+    print(Colors.YELLOW + f"[*] Testing Config with IP {target_ip} on Port {port}..." + Colors.END, flush=True)
+    
+    lat = check_ip_mahsang_fronting(target_ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], path=SCAN_SETTINGS['path'])
+    
+    working_results = []
+    dead_count = 0
+    if lat is not None:
+        country = get_ip_country(target_ip)
+        new_cfg = raw_config
         
-        msg_lines.extend([
-            "",
-            f"Total Working: {total_working} | Total Dead: {dead_count}",
-            f"Clean IPs provided by:",
-            f"Telegram Admin: {TELEGRAM_ID}",
-            f"Rubika Admin: {RUBIKA_ID}"
-        ])
+        ip_pattern = r'://([^@]+)@([^:]+):(\d+)'
+        match = re.search(ip_pattern, new_cfg)
+        if match:
+            old_ip = match.group(2)
+            old_port = match.group(3)
+            new_cfg = new_cfg.replace(f"{old_ip}:{old_port}", f"{target_ip}:{port}")
         
-        final_message = "\n".join(msg_lines)
-        print(Colors.YELLOW + "\n[*] Sending clean results to messengers..." + Colors.END, flush=True)
-        if send_to_all_messengers(final_message):
-            print(Colors.GREEN + "[+] Messengers: Sent Successfully ✅" + Colors.END, flush=True)
+        if "sni=" in new_cfg:
+            new_cfg = re.sub(r'sni=[^&]+', f"sni={SCAN_SETTINGS['domain']}", new_cfg)
         else:
-            print(Colors.RED + "[-] Messengers: Failed to Send ❌" + Colors.END, flush=True)
+            separator = "&" if "?" in new_cfg else "?"
+            new_cfg += f"{separator}sni={SCAN_SETTINGS['domain']}"
+            
+        if "host=" in new_cfg:
+            new_cfg = re.sub(r'host=[^&]+', f"host={SCAN_SETTINGS['domain']}", new_cfg)
 
-    print(Colors.GREEN + f"\n[+] Scan finished! Working: {total_working} | Dead: {dead_count}" + Colors.END, flush=True)
+        working_results.append((target_ip, lat, country, new_cfg))
+        print(f"{target_ip:<22} | {str(lat)+'ms':<10} | {Colors.GREEN}[CONNECTED & FIXED]{Colors.END}", flush=True)
+    else:
+        dead_count = 1
+        print(f"{target_ip:<22} | {'Timeout':<10} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
+        
+    header = f"📊 Scan Results\nXray Config Dedicated Scanner"
+    finalize_and_send(working_results, dead_count, header, port, "Xray_Config_Results.txt", is_config=True)
+    print(Colors.GREEN + f"\n[+] Scan finished!" + Colors.END, flush=True)
+    input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
+
+def menu_option_3_edge():
+    global stop_scan
+    ips = select_ip_source()
+    if not ips:
+        print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
+        input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
+        return
+        
+    configure_scanner_settings()
+    
+    port = SCAN_SETTINGS['port']
+    domain = SCAN_SETTINGS['domain']
+    timeout = SCAN_SETTINGS['timeout']
+    workers = SCAN_SETTINGS['workers']
+    
+    stop_scan = False
+    working_results = []
+    dead_count = 0
+    thread_lock = threading.Lock()
+    
+    print(Colors.YELLOW + f"\n[*] Starting Edge IP Scanner on {len(ips)} IPs..." + Colors.END, flush=True)
+    
+    def worker_task(ip):
+        nonlocal dead_count
+        if stop_scan:
+            return
+        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path=SCAN_SETTINGS['path'])
+        with thread_lock:
+            if lat is not None:
+                country = get_ip_country(ip)
+                res_str = f"{ip}"
+                working_results.append((res_str, lat, country))
+                print(f"{ip:<22} | {str(lat)+'ms':<10} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
+            else:
+                dead_count += 1
+                print(f"{ip:<22} | {'Timeout':<10} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        try:
+            futures = [executor.submit(worker_task, ip) for ip in ips]
+            for f in as_completed(futures):
+                if stop_scan:
+                    break
+        except KeyboardInterrupt:
+            stop_scan = True
+
+    header = f"📊 Scan Results\nEdge IP Scanner (Speed Test Mode)"
+    finalize_and_send(working_results, dead_count, header, port, "Edge_Scanner_Results.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Working: {len(working_results)} | Dead: {dead_count}" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
 def main_menu():
@@ -338,15 +520,18 @@ def main_menu():
         print(f"""{Colors.CYAN}
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ {Colors.GREEN}[1] MahsaNG & CDN Fronting Scanner (شیر و خورشید){Colors.CYAN}             ║
-║ {Colors.MAGENTA}[2] Edge IP Scanner (Speed Test){Colors.CYAN}                          ║
+║ {Colors.YELLOW}[2] Xray Config Dedicated Scanner{Colors.CYAN}                          ║
+║ {Colors.MAGENTA}[3] Edge IP Scanner (Speed Test){Colors.CYAN}                          ║
 ║ {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                                  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """, flush=True)
         choice = get_clean_input(Colors.BOLD + "[>] Select option: " + Colors.END)
         if choice == "1":
-            run_scanner_process("MahsaNG & CDN Fronting (شیر و خورشید)", "MahsaNG_CDN_IPs.txt")
+            menu_option_1_mahsang()
         elif choice == "2":
-            run_scanner_process("Edge IP Scanner (Speed Test Mode)", "Edge_Scanner_Results.txt")
+            menu_option_2_xray()
+        elif choice == "3":
+            menu_option_3_edge()
         elif choice == "0":
             print(Colors.YELLOW + "[*] Exiting..." + Colors.END, flush=True)
             sys.exit(0)
