@@ -11,8 +11,6 @@ import time
 import json
 import random
 import threading
-import uuid
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import urllib3
@@ -46,7 +44,7 @@ IGAP_CHAT_ID = "@ipscanner"
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
-# تنظیمات پیش‌فرض (SNI پیش‌فرض روی speed.cloudflare.com و Timeout روی 1.7 ثانیه)
+# تنظیمات پیش‌فرض ثابت شده روی خواسته شما (SNI: speed.cloudflare.com و Timeout: 1.7)
 SCAN_SETTINGS = {
     "domain": "speed.cloudflare.com",
     "path": "/",
@@ -58,7 +56,6 @@ SCAN_SETTINGS = {
 
 TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
 NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
-PORTS_TO_TEST = TLS_PORTS + NON_TLS_PORTS
 
 stop_scan = False
 COUNTRY_CACHE = {}
@@ -184,15 +181,10 @@ def send_results_by_country(working_results, header_prefix, port_tested, is_conf
         
         print(Colors.YELLOW + f"[*] Sending results for {country} to messengers..." + Colors.END, flush=True)
         
-        tg_ok = send_to_telegram(single_message)
-        rb_ok = send_to_rubika(single_message)
-        bl_ok = send_to_bale(single_message)
-        ig_ok = send_to_igap(single_message)
-        
-        print(f"  ├── Telegram: {'✅ (Success)' if tg_ok else '❌ (Failed)'}")
-        print(f"  ├── Rubika:   {'✅ (Success)' if rb_ok else '❌ (Failed)'}")
-        print(f"  ├── Bale:     {'✅ (Success)' if bl_ok else '❌ (Failed)'}")
-        print(f"  └── iGap:     {'✅ (Success)' if ig_ok else '❌ (Failed)'}")
+        send_to_telegram(single_message)
+        send_to_rubika(single_message)
+        send_to_bale(single_message)
+        send_to_igap(single_message)
         time.sleep(0.5)
 
 def get_clean_input(prompt_text):
@@ -226,14 +218,12 @@ def parse_ip_input(user_input):
     ips = []
     cleaned_text = user_input.replace("\n", " ").replace("\r", " ").replace("\t", " ")
     tokens = cleaned_text.split()
-    
     for token in tokens:
         token = token.strip().strip(",")
         if not token or token.startswith("#"):
             continue
         if ":" in token and not "/" in token:
             token = token.split(":")[0]
-            
         if "/" in token:
             try:
                 network = ipaddress.ip_network(token, strict=False)
@@ -245,24 +235,6 @@ def parse_ip_input(user_input):
                         break
             except Exception:
                 pass
-        elif "-" in token and "." in token:
-            try:
-                parts = token.split("-")
-                start_ip = parts[0].strip()
-                end_ip = parts[1].strip()
-                if end_ip.count(".") == 0:
-                    start_parts = start_ip.split(".")
-                    end_ip = ".".join(start_parts[:3]) + "." + end_ip
-                start = ipaddress.ip_address(start_ip)
-                end = ipaddress.ip_address(end_ip)
-                current = start
-                count = 0
-                while current <= end and count < 512:
-                    ips.append(str(current))
-                    current += 1
-                    count += 1
-            except Exception:
-                pass
         else:
             try:
                 ipaddress.ip_address(token)
@@ -272,7 +244,7 @@ def parse_ip_input(user_input):
     return list(dict.fromkeys(ips))
 
 def get_manual_ips():
-    print(Colors.CYAN + "\nEnter IPs (Paste horizontal/vertical list, press Enter twice to finish):" + Colors.END, flush=True)
+    print(Colors.CYAN + "\nEnter IPs (Paste list, press Enter twice to finish):" + Colors.END, flush=True)
     lines = []
     while True:
         try:
@@ -302,8 +274,8 @@ def select_ip_source():
     else:
         return []
 
-# تست سخت‌گیرانه همراه با هندشک کامل TLS و شبیه‌سازی ساختار پروکسی Xray
-def check_ip_http_latency(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, test_download=True, path="/"):
+# تست ساختاریافته و همگانی Xray روی تمام گزینه‌ها با Timeout پیش‌فرض 1.7 ثانیه
+def check_ip_xray_strict(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, path="/"):
     for attempt in range(2):
         start_time = time.time()
         try:
@@ -323,17 +295,15 @@ def check_ip_http_latency(ip, port=443, domain="speed.cloudflare.com", timeout=1
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
                 
-                # هندشک واقعی TLS همراه با SNI دلخواه کاربر
                 tls_sock = context.wrap_socket(sock, server_hostname=domain)
                 tls_sock.settimeout(timeout)
                 
-                # ارسال هدرهای سازگار با هندشک استانداردهای پروکسی Xray (VLESS / VMess / Trojan)
+                # پکت اختصاصی سازگار با هندشک Xray (VLESS/VMess/Trojan)
                 xray_payload = (
                     f"GET {path} HTTP/1.1\r\n"
                     f"Host: {domain}\r\n"
                     f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
-                    f"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8\r\n"
-                    f"Accept-Language: en-US,en;q=0.5\r\n"
+                    f"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
                     f"Connection: close\r\n\r\n"
                 )
                 tls_sock.sendall(xray_payload.encode())
@@ -352,62 +322,25 @@ def check_ip_http_latency(ip, port=443, domain="speed.cloudflare.com", timeout=1
     return None
 
 def save_to_file(filename_only, data):
-    possible_paths = [
-        os.path.join(DOWNLOAD_DIR, filename_only),
-        os.path.expanduser(f"~/storage/downloads/{filename_only}"),
-        os.path.expanduser(f"~/{filename_only}")
-    ]
-    for filepath in possible_paths:
-        try:
-            folder = os.path.dirname(filepath)
-            if folder:
-                os.makedirs(folder, exist_ok=True)
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(data)
-            break
-        except Exception:
-            continue
-
-def configure_settings():
-    print(Colors.CYAN + f"\n--- Current Scanner Settings ---" + Colors.END)
-    print(f"1. SNI / Domain: {Colors.GREEN}{SCAN_SETTINGS['domain']}{Colors.END}")
-    print(f"2. Port: {Colors.GREEN}{SCAN_SETTINGS['port']}{Colors.END}")
-    print(f"3. Timeout: {Colors.GREEN}{SCAN_SETTINGS['timeout']}s{Colors.END}")
-    print(f"4. Workers (Threads): {Colors.GREEN}{SCAN_SETTINGS['workers']}{Colors.END}")
-    
-    change = input(Colors.BOLD + "\nDo you want to change settings? (y/n): " + Colors.END).strip().lower()
-    if change == 'y':
-        new_domain = input(Colors.BOLD + f"Enter new SNI/Domain [Default: {SCAN_SETTINGS['domain']}]: " + Colors.END).strip()
-        if new_domain:
-            SCAN_SETTINGS['domain'] = new_domain
-            
-        new_port = input(Colors.BOLD + f"Enter new Port [Default: {SCAN_SETTINGS['port']}]: " + Colors.END).strip()
-        if new_port.isdigit():
-            SCAN_SETTINGS['port'] = int(new_port)
-            
-        new_timeout = input(Colors.BOLD + f"Enter new Timeout in seconds [Default: {SCAN_SETTINGS['timeout']}]: " + Colors.END).strip()
-        try:
-            if new_timeout:
-                SCAN_SETTINGS['timeout'] = float(new_timeout)
-        except ValueError:
-            pass
-            
-        print(Colors.GREEN + "[+] Settings updated successfully!" + Colors.END)
-        time.sleep(1)
+    filepath = os.path.join(DOWNLOAD_DIR, filename_only)
+    try:
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(data)
+    except Exception:
+        pass
 
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ AMIR SCANNER PRO - XRAY & CLOUDFLARE ENGINE                              ║
+║ AMIR SCANNER PRO - XRAY ENGINE (SNI: speed.cloudflare.com | TO: 1.7s)    ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.7.0 (Xray Handshake Enabled){Colors.CYAN}                  ║
-║ {Colors.YELLOW}► Current SNI :{Colors.WHITE} {SCAN_SETTINGS['domain']:<20}{Colors.CYAN}                     ║
-║ {Colors.YELLOW}► Timeout (Sec) :{Colors.WHITE} {str(SCAN_SETTINGS['timeout']):<18}{Colors.CYAN}                 ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.8.0 (Integrated Xray Mode){Colors.CYAN}                      ║
 ╚══════════════════════════════════════════════════════════════════════════╝{Colors.END}
 """
     print(banner, flush=True)
 
-def finalize_and_send(working_results, total_ips, header_prefix, port_tested, save_filename, is_config=False):
+def finalize_and_send(working_results, header_prefix, port_tested, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
     clean_ips_for_file = []
     for item in working_results:
@@ -426,7 +359,7 @@ def menu_option_1_mahsa():
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
-        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
+        input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
         return
     
     port = SCAN_SETTINGS['port']
@@ -438,18 +371,18 @@ def menu_option_1_mahsa():
     working_results = []
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"[*] Starting Mahsa & Xray Engine Scanner on {len(ips)} IPs (Port: {port}, SNI: {domain}, Timeout: {timeout}s)..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Scanning {len(ips)} IPs with Xray Engine (Port: {port}, SNI: {domain}, Timeout: {timeout}s)..." + Colors.END, flush=True)
     
     def worker_task(ip):
         if stop_scan:
             return
-        lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=True, path="/")
+        lat = check_ip_xray_strict(ip, port=port, domain=domain, timeout=timeout, path="/")
         if lat is not None:
             country = get_ip_country(ip)
             res_str = f"{ip}:{port}"
             with thread_lock:
                 working_results.append((res_str, lat, country))
-            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING / XRAY OK]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[XRAY OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
@@ -461,9 +394,9 @@ def menu_option_1_mahsa():
             stop_scan = True
 
     header = f"📊 Scan Results\nMahsa & Xray CDN Scanner"
-    finalize_and_send(working_results, len(ips), header, port, "Mahsa_Bypass_Results.txt")
+    finalize_and_send(working_results, header, port, "Mahsa_Bypass_Results.txt")
     print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
-    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
+    input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
 def menu_option_2_xray():
     global stop_scan
@@ -473,8 +406,7 @@ def menu_option_2_xray():
     target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
     if not target_ip:
         return
-    port_input = input(Colors.BOLD + f"Enter Port (Leave empty to test default {SCAN_SETTINGS['port']}): " + Colors.END).strip()
-    port = int(port_input) if port_input.isdigit() else SCAN_SETTINGS['port']
+    port = SCAN_SETTINGS['port']
     
     ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
     found_ips = re.findall(ip_pattern, raw_config)
@@ -482,7 +414,7 @@ def menu_option_2_xray():
     
     print(Colors.YELLOW + f"[*] Testing Xray Config with IP {target_ip} on Port {port} (SNI: {SCAN_SETTINGS['domain']})..." + Colors.END, flush=True)
     
-    lat = check_ip_http_latency(target_ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], test_download=SCAN_SETTINGS['test_download'], path=SCAN_SETTINGS['path'])
+    lat = check_ip_xray_strict(target_ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], path=SCAN_SETTINGS['path'])
     
     working_results = []
     if lat is not None:
@@ -498,16 +430,16 @@ def menu_option_2_xray():
         print(Colors.RED + "[-] Target IP failed Xray strict handshake test." + Colors.END, flush=True)
         
     header = f"📊 Scan Results\nXray Config Dedicated Scanner"
-    finalize_and_send(working_results, 1, header, port, "Xray_Config_Results.txt", is_config=True)
+    finalize_and_send(working_results, header, port, "Xray_Config_Results.txt", is_config=True)
     print(Colors.GREEN + f"\n[+] Scan finished!" + Colors.END, flush=True)
-    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
+    input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
 def menu_option_3_edge():
     global stop_scan
     ips = select_ip_source()
     if not ips:
         print(Colors.RED + "[!] No IPs loaded." + Colors.END, flush=True)
-        input(Colors.BOLD + "\n[*] Press Enter to return..." + Colors.END)
+        input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
         return
         
     port = SCAN_SETTINGS['port']
@@ -519,18 +451,18 @@ def menu_option_3_edge():
     working_results = []
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"[*] Starting Edge & Xray Download Scanner on {len(ips)} IPs (Port: {port}, SNI: {domain})..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Starting Edge IP Xray Scanner on {len(ips)} IPs (Port: {port}, SNI: {domain})..." + Colors.END, flush=True)
     
     def worker_task(ip):
         if stop_scan:
             return
-        lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=True, path="/")
+        lat = check_ip_xray_strict(ip, port=port, domain=domain, timeout=timeout, path="/")
         if lat is not None:
             country = get_ip_country(ip)
             res_str = f"{ip}:{port}"
             with thread_lock:
                 working_results.append((res_str, lat, country))
-            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING / XRAY OK]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[XRAY OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
@@ -541,10 +473,10 @@ def menu_option_3_edge():
         except KeyboardInterrupt:
             stop_scan = True
 
-    header = f"📊 Scan Results\nEdge IP Scanner (Xray Speed Test)"
-    finalize_and_send(working_results, len(ips), header, port, "Edge_Scanner_Results.txt")
+    header = f"📊 Scan Results\nEdge IP Scanner (Xray Handshake Mode)"
+    finalize_and_send(working_results, header, port, "Edge_Scanner_Results.txt")
     print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
-    input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
+    input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
 def main_menu():
     while True:
@@ -553,8 +485,7 @@ def main_menu():
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ {Colors.GREEN}[1] Mahsa & Xray CDN Scanner{Colors.CYAN}                              ║
 ║ {Colors.YELLOW}[2] Xray Config Dedicated Scanner{Colors.CYAN}                          ║
-║ {Colors.MAGENTA}[3] Edge IP Scanner (Xray Download Speed Test){Colors.CYAN}            ║
-║ {Colors.BLUE}[4] Change Settings (SNI / Port / Timeout){Colors.CYAN}                ║
+║ {Colors.MAGENTA}[3] Edge IP Xray Scanner (Speed Test){Colors.CYAN}                      ║
 ║ {Colors.END}{Colors.CYAN}[0] Exit{Colors.CYAN}                                                                  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """, flush=True)
@@ -565,14 +496,12 @@ def main_menu():
             menu_option_2_xray()
         elif choice == "3":
             menu_option_3_edge()
-        elif choice == "4":
-            configure_settings()
         elif choice == "0":
-            print(Colors.YELLOW + "[*] Exiting program..." + Colors.END, flush=True)
+            print(Colors.YELLOW + "[*] Exiting..." + Colors.END, flush=True)
             sys.exit(0)
         else:
-            print(Colors.RED + "[!] Invalid option selected." + Colors.END, flush=True)
-            input(Colors.BOLD + "\n[*] Press Enter to continue..." + Colors.END)
+            print(Colors.RED + "[!] Invalid option." + Colors.END, flush=True)
+            input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
             os.system("clear")
 
 if __name__ == "__main__":
