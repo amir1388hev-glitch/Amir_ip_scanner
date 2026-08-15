@@ -143,12 +143,31 @@ def send_to_igap(text):
             pass
     return success
 
-def send_to_all_messengers(text):
-    t_ok = send_to_telegram(text)
-    r_ok = send_to_rubika(text)
-    b_ok = send_to_bale(text)
-    i_ok = send_to_igap(text)
-    return t_ok or r_ok or b_ok or i_ok
+def send_results_by_country(working_results, header_prefix, port_tested, is_config=False):
+    if not working_results:
+        return
+    country_groups = {}
+    for item in working_results:
+        if is_config:
+            ip, lat, country, cfg_str = item
+            val = cfg_str
+        else:
+            target_str, lat, country = item
+            val = target_str
+        if country not in country_groups:
+            country_groups[country] = []
+        country_groups[country].append(val)
+        
+    for country, items in country_groups.items():
+        lines = [f"{header_prefix}", f"Port Tested: {port_tested}", f"SNI / Domain: {SCAN_SETTINGS['domain']}\n"]
+        lines.extend(items)
+        lines.append(f"\nCountry: {country} | Count: {len(items)}")
+        single_message = "\n".join(lines)
+        send_to_telegram(single_message)
+        send_to_rubika(single_message)
+        send_to_bale(single_message)
+        send_to_igap(single_message)
+        time.sleep(0.5)
 
 def get_clean_input(prompt_text):
     try:
@@ -237,37 +256,6 @@ def select_ip_source():
     else:
         return []
 
-def configure_scanner_settings():
-    global SCAN_SETTINGS
-    # مقادیر پیش‌فرض درخواستی شما
-    SCAN_SETTINGS["domain"] = "speed.cloudflare.com"
-    SCAN_SETTINGS["workers"] = 20
-    SCAN_SETTINGS["timeout"] = 1.7
-    SCAN_SETTINGS["port"] = 443
-
-    print(Colors.CYAN + "\n--- Scanner Configuration ---" + Colors.END, flush=True)
-    try:
-        domain_input = input(Colors.BOLD + f"Enter SNI / Domain [Default: {SCAN_SETTINGS['domain']}]: " + Colors.END).strip()
-        if domain_input:
-            SCAN_SETTINGS["domain"] = domain_input
-            
-        port_input = input(Colors.BOLD + f"Enter Port [Default: {SCAN_SETTINGS['port']}]: " + Colors.END).strip()
-        if port_input.isdigit():
-            SCAN_SETTINGS["port"] = int(port_input)
-
-        workers_input = input(Colors.BOLD + f"Enter Workers / Threads [Default: {SCAN_SETTINGS['workers']}]: " + Colors.END).strip()
-        if workers_input.isdigit():
-            SCAN_SETTINGS["workers"] = int(workers_input)
-        
-        timeout_input = input(Colors.BOLD + f"Enter Timeout (seconds) [Default: {SCAN_SETTINGS['timeout']}]: " + Colors.END).strip()
-        if timeout_input:
-            try:
-                SCAN_SETTINGS["timeout"] = float(timeout_input)
-            except ValueError:
-                pass
-    except Exception:
-        pass
-
 def check_ip_mahsang_fronting(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, path="/"):
     for attempt in range(2):
         start_time = time.time()
@@ -315,53 +303,26 @@ def save_to_file(filename_only, data):
 def print_banner():
     banner = f"""{Colors.CYAN}{Colors.BOLD}
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ AMIR SCANNER PRO - MAHSANG & XRAY ENGINE                                 ║
+║ AMIR SCANNER PRO - MAHSANG & XRAY ENGINE (SNI: speed.cloudflare.com)     ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v3.0.0 (Custom Terminal & Messenger Mode){Colors.CYAN}           ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.9.1 (Config Fix Mode){Colors.CYAN}                              ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
     print(banner, flush=True)
 
-def finalize_and_send(working_results, dead_count, header_prefix, port_tested, save_filename, is_config=False):
+def finalize_and_send(working_results, header_prefix, port_tested, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
     clean_ips_for_file = []
-    telegram_lines = []
-    
     for item in working_results:
         if is_config:
             ip, lat, country, cfg_str = item
             clean_ips_for_file.append(cfg_str)
-            telegram_lines.append(ip)
         else:
             target_str, lat, country = item
             clean_ips_for_file.append(target_str)
-            # فقط آی‌پی بدون پورت در پیام‌رسان‌ها قرار می‌گیرد
-            ip_only = target_str.split(":")[0]
-            telegram_lines.append(ip_only)
-            
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
-    
-    if working_results or dead_count > 0:
-        total_working = len(working_results)
-        msg_lines = [
-            f"{header_prefix}",
-            f"Port Tested: {port_tested}",
-            f"SNI / Domain: {SCAN_SETTINGS['domain']}\n"
-        ]
-        msg_lines.extend(telegram_lines)
-        msg_lines.extend([
-            f"\nTotal Working: {total_working} | Total Dead: {dead_count}",
-            f"Clean IPs provided by:",
-            f"Telegram Admin: {TELEGRAM_ID}",
-            f"Rubika Admin: {RUBIKA_ID}"
-        ])
-        
-        final_message = "\n".join(msg_lines)
-        print(Colors.YELLOW + "\n[*] Sending results to messengers..." + Colors.END, flush=True)
-        if send_to_all_messengers(final_message):
-            print(Colors.GREEN + "[+] Messengers: Sent Successfully ✅" + Colors.END, flush=True)
-        else:
-            print(Colors.RED + "[-] Messengers: Failed to Send ❌" + Colors.END, flush=True)
+    if working_results:
+        send_results_by_country(working_results, header_prefix, port_tested, is_config)
 
 def menu_option_1_mahsang():
     global stop_scan
@@ -371,8 +332,6 @@ def menu_option_1_mahsang():
         input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
         return
     
-    configure_scanner_settings()
-    
     port = SCAN_SETTINGS['port']
     domain = SCAN_SETTINGS['domain']
     timeout = SCAN_SETTINGS['timeout']
@@ -380,25 +339,20 @@ def menu_option_1_mahsang():
     
     stop_scan = False
     working_results = []
-    dead_count = 0
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"\n[*] Scanning {len(ips)} IPs | Domain: {domain} | Port: {port} | Threads: {workers} | Timeout: {timeout}s..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Scanning {len(ips)} IPs for MahsaNG CDN Fronting..." + Colors.END, flush=True)
     
     def worker_task(ip):
-        nonlocal dead_count
         if stop_scan:
             return
-        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path=SCAN_SETTINGS['path'])
-        with thread_lock:
-            if lat is not None:
-                country = get_ip_country(ip)
-                res_str = f"{ip}"
+        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path="/")
+        if lat is not None:
+            country = get_ip_country(ip)
+            res_str = f"{ip}"
+            with thread_lock:
                 working_results.append((res_str, lat, country))
-                print(f"{ip:<22} | {str(lat)+'ms':<10} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
-            else:
-                dead_count += 1
-                print(f"{ip:<22} | {'Timeout':<10} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
@@ -410,8 +364,8 @@ def menu_option_1_mahsang():
             stop_scan = True
 
     header = f"📊 Scan Results\nMahsaNG & CDN Fronting (شیر و خورشید)"
-    finalize_and_send(working_results, dead_count, header, port, "MahsaNG_CDN_IPs.txt")
-    print(Colors.GREEN + f"\n[+] Scan finished! Working: {len(working_results)} | Dead: {dead_count}" + Colors.END, flush=True)
+    finalize_and_send(working_results, header, port, "MahsaNG_CDN_IPs.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
 def menu_option_2_xray():
@@ -422,8 +376,6 @@ def menu_option_2_xray():
     target_ip = input(Colors.BOLD + "Enter Target IP: " + Colors.END).strip()
     if not target_ip:
         return
-        
-    configure_scanner_settings()
     port = SCAN_SETTINGS['port']
     
     print(Colors.YELLOW + f"[*] Testing Config with IP {target_ip} on Port {port}..." + Colors.END, flush=True)
@@ -431,18 +383,22 @@ def menu_option_2_xray():
     lat = check_ip_mahsang_fronting(target_ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], path=SCAN_SETTINGS['path'])
     
     working_results = []
-    dead_count = 0
     if lat is not None:
         country = get_ip_country(target_ip)
+        
+        # اصلاح دقیق ساختار لینک برای پینگ دادن صحیح در v2rayNG (تنظیم IP، پورت، و اصلاح SNI/Host)
         new_cfg = raw_config
         
+        # جایگزینی آی‌پی و پورت در بخش آدرس اصلی لینک
         ip_pattern = r'://([^@]+)@([^:]+):(\d+)'
         match = re.search(ip_pattern, new_cfg)
         if match:
+            auth_part = match.group(1)
             old_ip = match.group(2)
             old_port = match.group(3)
             new_cfg = new_cfg.replace(f"{old_ip}:{old_port}", f"{target_ip}:{port}")
         
+        # جایگزینی پارامترهای sni و host در کوئری لینک برای جلوگیری از خطای پینگ -1ms
         if "sni=" in new_cfg:
             new_cfg = re.sub(r'sni=[^&]+', f"sni={SCAN_SETTINGS['domain']}", new_cfg)
         else:
@@ -453,13 +409,12 @@ def menu_option_2_xray():
             new_cfg = re.sub(r'host=[^&]+', f"host={SCAN_SETTINGS['domain']}", new_cfg)
 
         working_results.append((target_ip, lat, country, new_cfg))
-        print(f"{target_ip:<22} | {str(lat)+'ms':<10} | {Colors.GREEN}[CONNECTED & FIXED]{Colors.END}", flush=True)
+        print(f"{target_ip}:{port:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[CONNECTED & FIXED]{Colors.END}", flush=True)
     else:
-        dead_count = 1
-        print(f"{target_ip:<22} | {'Timeout':<10} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
+        print(Colors.RED + "[-] Target IP failed connection test." + Colors.END, flush=True)
         
     header = f"📊 Scan Results\nXray Config Dedicated Scanner"
-    finalize_and_send(working_results, dead_count, header, port, "Xray_Config_Results.txt", is_config=True)
+    finalize_and_send(working_results, header, port, "Xray_Config_Results.txt", is_config=True)
     print(Colors.GREEN + f"\n[+] Scan finished!" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
@@ -471,8 +426,6 @@ def menu_option_3_edge():
         input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
         return
         
-    configure_scanner_settings()
-    
     port = SCAN_SETTINGS['port']
     domain = SCAN_SETTINGS['domain']
     timeout = SCAN_SETTINGS['timeout']
@@ -480,25 +433,20 @@ def menu_option_3_edge():
     
     stop_scan = False
     working_results = []
-    dead_count = 0
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"\n[*] Starting Edge IP Scanner on {len(ips)} IPs..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Starting Edge IP Scanner on {len(ips)} IPs..." + Colors.END, flush=True)
     
     def worker_task(ip):
-        nonlocal dead_count
         if stop_scan:
             return
-        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path=SCAN_SETTINGS['path'])
-        with thread_lock:
-            if lat is not None:
-                country = get_ip_country(ip)
-                res_str = f"{ip}"
+        lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path="/")
+        if lat is not None:
+            country = get_ip_country(ip)
+            res_str = f"{ip}:{port}"
+            with thread_lock:
                 working_results.append((res_str, lat, country))
-                print(f"{ip:<22} | {str(lat)+'ms':<10} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
-            else:
-                dead_count += 1
-                print(f"{ip:<22} | {'Timeout':<10} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
@@ -510,8 +458,8 @@ def menu_option_3_edge():
             stop_scan = True
 
     header = f"📊 Scan Results\nEdge IP Scanner (Speed Test Mode)"
-    finalize_and_send(working_results, dead_count, header, port, "Edge_Scanner_Results.txt")
-    print(Colors.GREEN + f"\n[+] Scan finished! Working: {len(working_results)} | Dead: {dead_count}" + Colors.END, flush=True)
+    finalize_and_send(working_results, header, port, "Edge_Scanner_Results.txt")
+    print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
 
 def main_menu():
