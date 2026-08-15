@@ -143,7 +143,7 @@ def send_to_igap(text):
         except Exception:
             pass
 
-def send_results_by_country(working_results, header_prefix, is_config=False):
+def send_results_by_country(working_results, header_prefix, port_tested, is_config=False):
     if not working_results:
         return
     country_groups = {}
@@ -159,7 +159,7 @@ def send_results_by_country(working_results, header_prefix, is_config=False):
         country_groups[country].append(val)
         
     for country, items in country_groups.items():
-        lines = [f"{header_prefix}\n"]
+        lines = [f"{header_prefix}", f"Port Tested: {port_tested}\n"]
         lines.extend(items)
         lines.append(f"\nCountry: {country} | Count: {len(items)}")
         lines.append(f"\nClean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}")
@@ -183,9 +183,8 @@ def get_ips_from_github(url):
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            lines = response.text.splitlines()
-            ips = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
-            return parse_ip_input(",".join(ips))
+            text = response.text
+            return parse_ip_input(text)
     except Exception:
         pass
     return []
@@ -194,30 +193,29 @@ def get_ips_from_local_file():
     if os.path.exists(LOCAL_ALL_IPS_FILE):
         try:
             with open(LOCAL_ALL_IPS_FILE, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            raw_ips = []
-            for line in lines:
-                clean_line = line.strip()
-                if clean_line and not clean_line.startswith("#"):
-                    ip_part = clean_line.split()[0].split(":")[0]
-                    raw_ips.append(ip_part)
-            if raw_ips:
-                return parse_ip_input(",".join(raw_ips))
+                text = f.read()
+            return parse_ip_input(text)
         except Exception:
             pass
     return []
 
 def parse_ip_input(user_input):
     ips = []
-    formatted_input = user_input.replace("\n", ",").replace("\r", ",")
-    entries = formatted_input.split(",")
-    for entry in entries:
-        entry = entry.strip()
-        if not entry:
+    # جایگزینی انواع فاصله، تب و کاراکترهای اضافی با کاما برای تفکیک دقیق
+    cleaned_text = user_input.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    tokens = cleaned_text.split()
+    
+    for token in tokens:
+        token = token.strip().strip(",")
+        if not token or token.startswith("#"):
             continue
-        if "/" in entry:
+        # اگر فرمت ip:port بود، پورت رو جدا می‌کنیم و فقط آی‌پی رو بر می‌داریم
+        if ":" in token and not "/" in token:
+            token = token.split(":")[0]
+            
+        if "/" in token:
             try:
-                network = ipaddress.ip_network(entry, strict=False)
+                network = ipaddress.ip_network(token, strict=False)
                 count = 0
                 for ip in network.hosts():
                     ips.append(str(ip))
@@ -226,9 +224,9 @@ def parse_ip_input(user_input):
                         break
             except Exception:
                 pass
-        elif "-" in entry and "." in entry:
+        elif "-" in token and "." in token:
             try:
-                parts = entry.split("-")
+                parts = token.split("-")
                 start_ip = parts[0].strip()
                 end_ip = parts[1].strip()
                 if end_ip.count(".") == 0:
@@ -246,19 +244,19 @@ def parse_ip_input(user_input):
                 pass
         else:
             try:
-                ipaddress.ip_address(entry)
-                ips.append(entry)
+                ipaddress.ip_address(token)
+                ips.append(token)
             except Exception:
                 pass
-    return ips
+    return list(dict.fromkeys(ips)) # حذف موارد تکراری
 
 def get_manual_ips():
-    print(Colors.CYAN + "\nEnter IPs (single IP, range, CIDR, or multiline paste, press Enter twice to finish):" + Colors.END, flush=True)
+    print(Colors.CYAN + "\nEnter IPs (Paste your horizontal or vertical IP list here, press Enter twice to finish):" + Colors.END, flush=True)
     lines = []
     while True:
         try:
-            line = input().strip()
-            if not line:
+            line = input()
+            if not line.strip():
                 if lines:
                     break
                 else:
@@ -266,7 +264,7 @@ def get_manual_ips():
             lines.append(line)
         except (KeyboardInterrupt, EOFError):
             break
-    user_input = ",".join(lines)
+    user_input = " ".join(lines)
     return parse_ip_input(user_input)
 
 def select_ip_source():
@@ -347,7 +345,7 @@ def print_banner():
 """
     print(banner, flush=True)
 
-def finalize_and_send(working_results, total_ips, header_prefix, save_filename, is_config=False):
+def finalize_and_send(working_results, total_ips, header_prefix, port_tested, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
     clean_ips_for_file = []
     for item in working_results:
@@ -359,13 +357,12 @@ def finalize_and_send(working_results, total_ips, header_prefix, save_filename, 
             clean_ips_for_file.append(target_str)
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
     if working_results:
-        send_results_by_country(working_results, header_prefix, is_config)
+        send_results_by_country(working_results, header_prefix, port_tested, is_config)
 
 # ==========================================
 # 3 گزینه اصلی پروژه
 # ==========================================
 
-# گزینه 1: اسکنر تغییر اول (مهسا / فرانتینگ CDN)
 def menu_option_1_mahsa():
     global stop_scan
     ips = select_ip_source()
@@ -405,12 +402,11 @@ def menu_option_1_mahsa():
         except KeyboardInterrupt:
             stop_scan = True
 
-    header = f"📊 Scan Results\nMahsa & Shir-o-Khorshid CDN Scanner\nPort Tested: {port}"
-    finalize_and_send(working_results, len(ips), header, "Mahsa_Bypass_Results.txt")
+    header = f"📊 Scan Results\nMahsa & Shir-o-Khorshid CDN Scanner"
+    finalize_and_send(working_results, len(ips), header, port, "Mahsa_Bypass_Results.txt")
     print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
-# گزینه 2: اسکنر تغییر دوم (اختصاصی کانفیگ و تست مستقیم با Xray)
 def menu_option_2_xray():
     global stop_scan
     raw_config = input(Colors.BOLD + "Enter Raw Config: " + Colors.END).strip()
@@ -443,12 +439,11 @@ def menu_option_2_xray():
     else:
         print(Colors.RED + "[-] Target IP failed latency test." + Colors.END, flush=True)
         
-    header = f"📊 Scan Results\nXray Config Dedicated Scanner\nPort Tested: {port}"
-    finalize_and_send(working_results, 1, header, "Xray_Config_Results.txt", is_config=True)
+    header = f"📊 Scan Results\nXray Config Dedicated Scanner"
+    finalize_and_send(working_results, 1, header, port, "Xray_Config_Results.txt", is_config=True)
     print(Colors.GREEN + f"\n[+] Scan finished!" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
-# گزینه 3: اسکنر تغییر سوم (Edge Scanner / تست سرعت دانلود)
 def menu_option_3_edge():
     global stop_scan
     ips = select_ip_source()
@@ -488,8 +483,8 @@ def menu_option_3_edge():
         except KeyboardInterrupt:
             stop_scan = True
 
-    header = f"📊 Scan Results\nEdge IP Scanner (Download Speed Test)\nPort Tested: {port}"
-    finalize_and_send(working_results, len(ips), header, "Edge_Scanner_Results.txt")
+    header = f"📊 Scan Results\nEdge IP Scanner (Download Speed Test)"
+    finalize_and_send(working_results, len(ips), header, port, "Edge_Scanner_Results.txt")
     print(Colors.GREEN + f"\n[+] Scan finished! Total working IPs: {len(working_results)}" + Colors.END, flush=True)
     input(Colors.BOLD + "\n[*] Press Enter to return to main menu..." + Colors.END)
 
