@@ -44,7 +44,6 @@ IGAP_CHAT_ID = "@ipscanner"
 TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
-# تنظیمات پیش‌فرض ثابت شده (SNI: speed.cloudflare.com و Timeout: 1.7)
 SCAN_SETTINGS = {
     "domain": "speed.cloudflare.com",
     "path": "/",
@@ -52,9 +51,6 @@ SCAN_SETTINGS = {
     "timeout": 1.7,
     "workers": 20,
 }
-
-TLS_PORTS = [443, 8443, 2053, 2083, 2087, 2096]
-NON_TLS_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095]
 
 stop_scan = False
 COUNTRY_CACHE = {}
@@ -70,15 +66,6 @@ def get_ip_country(ip):
             if country and country != "Unknown":
                 COUNTRY_CACHE[ip_prefix] = country
                 return country
-    except Exception:
-        pass
-    try:
-        res = requests.get(f"https://ipmyp.ir/api/ip/{ip}", timeout=3)
-        data = res.json()
-        country = data.get("country") or data.get("country_name") or "Unknown"
-        if country != "Unknown":
-            COUNTRY_CACHE[ip_prefix] = country
-            return country
     except Exception:
         pass
     return "Unknown"
@@ -175,11 +162,7 @@ def send_results_by_country(working_results, header_prefix, port_tested, is_conf
         lines = [f"{header_prefix}", f"Port Tested: {port_tested}", f"SNI / Domain: {SCAN_SETTINGS['domain']}\n"]
         lines.extend(items)
         lines.append(f"\nCountry: {country} | Count: {len(items)}")
-        lines.append(f"\nClean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}")
         single_message = "\n".join(lines)
-        
-        print(Colors.YELLOW + f"[*] Sending results for {country} to messengers..." + Colors.END, flush=True)
-        
         send_to_telegram(single_message)
         send_to_rubika(single_message)
         send_to_bale(single_message)
@@ -273,7 +256,6 @@ def select_ip_source():
     else:
         return []
 
-# اسکنر اختصاصی متناسب با ساختار فرانتینگ CDN و اتصال پایدار در نت ملی (شیر و خورشید / MahsaNG)
 def check_ip_mahsang_fronting(ip, port=443, domain="speed.cloudflare.com", timeout=1.7, path="/"):
     for attempt in range(2):
         start_time = time.time()
@@ -289,7 +271,6 @@ def check_ip_mahsang_fronting(ip, port=443, domain="speed.cloudflare.com", timeo
             tls_sock = context.wrap_socket(sock, server_hostname=domain)
             tls_sock.settimeout(timeout)
             
-            # پکت درخواست سازگار با فرانتینگ CDN و بایپس دقیق در نت ملی
             fronting_payload = (
                 f"GET {path} HTTP/1.1\r\n"
                 f"Host: {domain}\r\n"
@@ -324,7 +305,7 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ AMIR SCANNER PRO - MAHSANG & XRAY ENGINE (SNI: speed.cloudflare.com)     ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.9.0 (MahsaNG Fronting & CDN Engine){Colors.CYAN}              ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v2.9.1 (Config Fix Mode){Colors.CYAN}                              ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
     print(banner, flush=True)
@@ -360,7 +341,7 @@ def menu_option_1_mahsang():
     working_results = []
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"[*] Scanning {len(ips)} IPs for MahsaNG CDN Fronting (Port: {port}, SNI: {domain}, Timeout: {timeout}s)..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Scanning {len(ips)} IPs for MahsaNG CDN Fronting..." + Colors.END, flush=True)
     
     def worker_task(ip):
         if stop_scan:
@@ -368,10 +349,10 @@ def menu_option_1_mahsang():
         lat = check_ip_mahsang_fronting(ip, port=port, domain=domain, timeout=timeout, path="/")
         if lat is not None:
             country = get_ip_country(ip)
-            res_str = f"{ip}" # خروجی به صورت IP خالص برای قرارگیری مستقیم در بخش CDN IP اپلیکیشن MahsaNG
+            res_str = f"{ip}"
             with thread_lock:
                 working_results.append((res_str, lat, country))
-            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[MAHSANG OK]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
@@ -397,26 +378,40 @@ def menu_option_2_xray():
         return
     port = SCAN_SETTINGS['port']
     
-    ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
-    found_ips = re.findall(ip_pattern, raw_config)
-    old_ip = found_ips[0] if found_ips else None
-    
-    print(Colors.YELLOW + f"[*] Testing Xray Config with IP {target_ip} on Port {port} (SNI: {SCAN_SETTINGS['domain']})..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Testing Config with IP {target_ip} on Port {port}..." + Colors.END, flush=True)
     
     lat = check_ip_mahsang_fronting(target_ip, port=port, domain=SCAN_SETTINGS['domain'], timeout=SCAN_SETTINGS['timeout'], path=SCAN_SETTINGS['path'])
     
     working_results = []
     if lat is not None:
         country = get_ip_country(target_ip)
-        new_cfg = raw_config.replace(old_ip, target_ip) if old_ip else raw_config
-        new_cfg = re.sub(rf"({re.escape(target_ip)}):(\d+)", rf"\1:{port}", new_cfg)
-        if f":{port}" not in new_cfg and old_ip:
-            new_cfg = re.sub(r':\d+', f':{port}', new_cfg, count=1)
+        
+        # اصلاح دقیق ساختار لینک برای پینگ دادن صحیح در v2rayNG (تنظیم IP، پورت، و اصلاح SNI/Host)
+        new_cfg = raw_config
+        
+        # جایگزینی آی‌پی و پورت در بخش آدرس اصلی لینک
+        ip_pattern = r'://([^@]+)@([^:]+):(\d+)'
+        match = re.search(ip_pattern, new_cfg)
+        if match:
+            auth_part = match.group(1)
+            old_ip = match.group(2)
+            old_port = match.group(3)
+            new_cfg = new_cfg.replace(f"{old_ip}:{old_port}", f"{target_ip}:{port}")
+        
+        # جایگزینی پارامترهای sni و host در کوئری لینک برای جلوگیری از خطای پینگ -1ms
+        if "sni=" in new_cfg:
+            new_cfg = re.sub(r'sni=[^&]+', f"sni={SCAN_SETTINGS['domain']}", new_cfg)
+        else:
+            separator = "&" if "?" in new_cfg else "?"
+            new_cfg += f"{separator}sni={SCAN_SETTINGS['domain']}"
             
+        if "host=" in new_cfg:
+            new_cfg = re.sub(r'host=[^&]+', f"host={SCAN_SETTINGS['domain']}", new_cfg)
+
         working_results.append((target_ip, lat, country, new_cfg))
-        print(f"{target_ip}:{port:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[XRAY CONNECTED]{Colors.END}", flush=True)
+        print(f"{target_ip}:{port:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[CONNECTED & FIXED]{Colors.END}", flush=True)
     else:
-        print(Colors.RED + "[-] Target IP failed strict handshake test." + Colors.END, flush=True)
+        print(Colors.RED + "[-] Target IP failed connection test." + Colors.END, flush=True)
         
     header = f"📊 Scan Results\nXray Config Dedicated Scanner"
     finalize_and_send(working_results, header, port, "Xray_Config_Results.txt", is_config=True)
@@ -440,7 +435,7 @@ def menu_option_3_edge():
     working_results = []
     thread_lock = threading.Lock()
     
-    print(Colors.YELLOW + f"[*] Starting Edge IP Scanner on {len(ips)} IPs (Port: {port}, SNI: {domain})..." + Colors.END, flush=True)
+    print(Colors.YELLOW + f"[*] Starting Edge IP Scanner on {len(ips)} IPs..." + Colors.END, flush=True)
     
     def worker_task(ip):
         if stop_scan:
@@ -451,7 +446,7 @@ def menu_option_3_edge():
             res_str = f"{ip}:{port}"
             with thread_lock:
                 working_results.append((res_str, lat, country))
-            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[EDGE OK]{Colors.END}", flush=True)
+            print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[OK]{Colors.END}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
