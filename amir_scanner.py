@@ -43,7 +43,6 @@ TELEGRAM_ID = "@Pod66Mp"
 RUBIKA_ID = "@Amir5880Om"
 
 stop_scan = False
-COUNTRY_CACHE = {}
 
 def split_message_smart(text, max_length=3500):
     lines = text.split("\n")
@@ -65,26 +64,42 @@ def split_message_smart(text, max_length=3500):
 def send_to_all_messengers(text):
     success_any = False
     for chunk in split_message_smart(text, max_length=3800):
+        # تلگرام
         try:
             if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-                res = requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "disable_web_page_preview": True}, timeout=10)
-                if res.status_code == 200: success_any = True
-        except Exception: pass
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "disable_web_page_preview": True}, timeout=10)
+                if res.status_code == 200:
+                    success_any = True
+        except Exception:
+            pass
+        # روبیکا
         try:
             if RUBIKA_BOT_TOKEN and RUBIKA_CHAT_ID:
-                res = requests.post(f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage", json={"chat_id": RUBIKA_CHAT_ID, "text": chunk}, timeout=10)
-                if res.status_code == 200: success_any = True
-        except Exception: pass
+                url = f"https://botapi.rubika.ir/v01/{RUBIKA_BOT_TOKEN}/sendMessage"
+                res = requests.post(url, json={"chat_id": RUBIKA_CHAT_ID, "text": chunk}, timeout=10)
+                if res.status_code == 200:
+                    success_any = True
+        except Exception:
+            pass
+        # بله
         try:
             if BALE_BOT_TOKEN and BALE_CHAT_ID:
-                res = requests.post(f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage", json={"chat_id": BALE_CHAT_ID, "text": chunk}, timeout=10)
-                if res.status_code == 200: success_any = True
-        except Exception: pass
+                url = f"https://tapi.bale.ai/bot{BALE_BOT_TOKEN}/sendMessage"
+                res = requests.post(url, json={"chat_id": BALE_CHAT_ID, "text": chunk}, timeout=10)
+                if res.status_code == 200:
+                    success_any = True
+        except Exception:
+            pass
+        # ایگپ
         try:
             if IGAP_BOT_TOKEN and IGAP_CHAT_ID:
-                res = requests.post("https://api.igap.net/v1/bot/sendMessage", json={"token": IGAP_BOT_TOKEN, "room_id": IGAP_CHAT_ID, "message": chunk}, timeout=10)
-                if res.status_code == 200: success_any = True
-        except Exception: pass
+                url = "https://api.igap.net/v1/bot/sendMessage"
+                res = requests.post(url, json={"token": IGAP_BOT_TOKEN, "room_id": IGAP_CHAT_ID, "message": chunk}, timeout=10)
+                if res.status_code == 200:
+                    success_any = True
+        except Exception:
+            pass
     return success_any
 
 def get_clean_input(prompt_text):
@@ -222,7 +237,7 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ AMIR SCANNER PRO - CLEAN & FAST ENGINE                                   ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ {Colors.YELLOW}► Version :{Colors.WHITE} v3.1.0 (Custom Settings Mode){Colors.CYAN}                          ║
+║ {Colors.YELLOW}► Version :{Colors.WHITE} v3.2.0 (Messenger Fix Mode){Colors.CYAN}                          ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
     print(banner, flush=True)
@@ -235,7 +250,6 @@ def run_scanner_process(scanner_title, save_filename):
         input(Colors.BOLD + "\n[*] Press Enter..." + Colors.END)
         return
 
-    # تنظیمات پویا با مقادیر پیش‌فرض درخواست‌شده
     print(Colors.CYAN + "\n--- Scanner Configuration ---" + Colors.END, flush=True)
     try:
         domain_input = input(Colors.BOLD + "Enter SNI / Domain [Default: speed.cloudflare.com]: " + Colors.END).strip()
@@ -291,11 +305,22 @@ def run_scanner_process(scanner_title, save_filename):
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
 
     if working_results:
-        msg_lines = [f"📊 {scanner_title}", f"Port Tested: {port}", f"SNI / Domain: {domain}\n"]
+        msg_lines = [
+            f"📊 {scanner_title}",
+            f"Port Tested: {port}",
+            f"SNI / Domain: {domain}",
+            ""
+        ]
         for ip, lat in working_results:
             msg_lines.append(ip)
-        msg_lines.append(f"\nTotal Working: {total_working} | Total Dead: {dead_count}")
-        msg_lines.append(f"Clean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}")
+        
+        msg_lines.extend([
+            "",
+            f"Total Working: {total_working} | Total Dead: {dead_count}",
+            f"Clean IPs provided by:",
+            f"Telegram Admin: {TELEGRAM_ID}",
+            f"Rubika Admin: {RUBIKA_ID}"
+        ])
         
         final_message = "\n".join(msg_lines)
         print(Colors.YELLOW + "\n[*] Sending clean results to messengers..." + Colors.END, flush=True)
