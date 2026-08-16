@@ -510,7 +510,7 @@ def send_to_igap(text):
         except Exception:
             pass
 
-def send_results_by_country(working_results, header_prefix, is_config=False):
+def send_results_by_country(working_results, total_tasks, header_prefix, is_config=False):
     if not working_results:
         return
     country_groups = {}
@@ -525,13 +525,16 @@ def send_results_by_country(working_results, header_prefix, is_config=False):
             country_groups[country] = []
         country_groups[country].append(val)
         
+    total_healthy = len(working_results)
+    total_bad = total_tasks - total_healthy
+
     for country, items in country_groups.items():
-        # اصلاح ارسال بصورت لیست عمودی و زیر هم
         vertical_list = "\n".join(items)
         lines = [
             f"{header_prefix}",
             f"Country: {country} | Count: {len(items)}",
             f"\n{vertical_list}\n",
+            f"✅ تعداد سالم: {total_healthy} | ❌ تعداد خراب: {total_bad}",
             f"Clean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}"
         ]
         single_message = "\n".join(lines)
@@ -759,7 +762,7 @@ def print_banner():
 """
     print(banner, flush=True)
 
-def finalize_and_send(working_results, total_ips, header_prefix, save_filename, is_config=False):
+def finalize_and_send(working_results, total_tasks, header_prefix, save_filename, is_config=False):
     working_results.sort(key=lambda x: x[1])
     clean_ips_for_file = []
     for item in working_results:
@@ -770,10 +773,9 @@ def finalize_and_send(working_results, total_ips, header_prefix, save_filename, 
             target_str, lat, country = item
             clean_ips_for_file.append(target_str)
     
-    # ذخیره به صورت عمودی (زیر هم) در فایل خروجی
     save_to_file(save_filename, "\n".join(clean_ips_for_file))
     if working_results:
-        send_results_by_country(working_results, header_prefix, is_config)
+        send_results_by_country(working_results, total_tasks, header_prefix, is_config)
 
 def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers, is_port_scan=False, extra_tasks=None):
     global stop_scan
@@ -801,13 +803,15 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
         if is_port_scan:
             ip, p = item
             lat = check_ip_http_latency(ip, port=p, domain=domain, timeout=timeout, test_download=test_download, path=path)
+            res_str = f"{ip}:{p}"
             if lat is not None:
                 country = get_ip_country(ip)
-                res_str = f"{ip}:{p}"
                 with thread_lock:
                     working_results.append((res_str, lat, country))
                 print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
                 return True
+            else:
+                print(f"{res_str:<22} | {'TIMEOUT':<10} | Country: {'Unknown':<15} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
         else:
             ip = item
             lat = check_ip_http_latency(ip, port=port, domain=domain, timeout=timeout, test_download=test_download, path=path)
@@ -817,6 +821,8 @@ def run_scanner_engine(ips, port, domain, timeout, test_download, path, workers,
                     working_results.append((ip, lat, country))
                 print(f"{ip:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
                 return True
+            else:
+                print(f"{ip:<18} | {'TIMEOUT':<10} | Country: {'Unknown':<15} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
         return None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -895,6 +901,8 @@ def menu_option_3():
             with thread_lock:
                 results.append((res_str, 0, country))
             print(f"{res_str:<22} | Country: {country:<15} | {Colors.GREEN}[OPEN]{Colors.END}", flush=True)
+        else:
+            print(f"{res_str:<22} | Country: {'Unknown':<15} | {Colors.RED}[TIMEOUT/CLOSED]{Colors.END}", flush=True)
             
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -938,6 +946,8 @@ def menu_option_4():
             with thread_lock:
                 working_results.append((target_ip, lat, country, new_cfg))
             print(f"{target_ip}:{p:<18} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
+        else:
+            print(f"{target_ip}:{p:<18} | {'TIMEOUT':<10} | Country: {'Unknown':<15} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
             
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -1038,6 +1048,8 @@ def menu_option_8_udp_tcp():
             with thread_lock:
                 working_results.append((res_str, lat, country))
             print(f"{res_str:<22} | {str(lat)+'ms':<10} | Country: {country:<15} | {Colors.GREEN}[WORKING]{Colors.END}", flush=True)
+        else:
+            print(f"{res_str:<22} | {'TIMEOUT':<10} | Country: {'Unknown':<15} | {Colors.RED}[TIMEOUT]{Colors.END}", flush=True)
                 
     with ThreadPoolExecutor(max_workers=SCAN_SETTINGS['workers']) as executor:
         try:
@@ -1052,7 +1064,6 @@ def menu_option_8_udp_tcp():
     working_results.sort(key=lambda x: x[1])
     clean_ips_for_file = [item[0] for item in working_results]
     
-    # ذخیره عمودی (زیر هم) در فایل
     save_to_file(filename, "\n".join(clean_ips_for_file))
     
     if working_results:
@@ -1063,12 +1074,17 @@ def menu_option_8_udp_tcp():
                 country_groups[country] = []
             country_groups[country].append(target_str)
         proto_text = "TCP Protocol Test" if sub_choice == "2" else "UDP Protocol Test"
+        
+        total_healthy = len(working_results)
+        total_bad = len(tasks_list) - total_healthy
+        
         for country, items in country_groups.items():
             vertical_list = "\n".join(items)
             lines = [
                 f"📊 Scan Results\n{proto_text}",
                 f"Country: {country} | Count: {len(items)}",
                 f"\n{vertical_list}\n",
+                f"✅ تعداد سالم: {total_healthy} | ❌ تعداد خراب: {total_bad}",
                 f"Clean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}"
             ]
             single_message = "\n".join(lines)
