@@ -526,12 +526,12 @@ def send_results_by_country(working_results, header_prefix, is_config=False):
         country_groups[country].append(val)
         
     for country, items in country_groups.items():
-        # اصلاح ارسال بصورت لیست افقی و یک خطی با جداکننده کاما یا فاصله
-        horizontal_list = ", ".join(items)
+        # اصلاح ارسال بصورت لیست عمودی و زیر هم
+        vertical_list = "\n".join(items)
         lines = [
             f"{header_prefix}",
             f"Country: {country} | Count: {len(items)}",
-            f"\n{horizontal_list}\n",
+            f"\n{vertical_list}\n",
             f"Clean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}"
         ]
         single_message = "\n".join(lines)
@@ -600,7 +600,6 @@ def get_ips_from_github(url):
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             text = response.text
-            # هوش مصنوعی پیشرفته برای شناسایی انواع فرمت‌های IP (ساده، پورت‌دار، سابمیت‌ها و کانفیگ‌ها)
             found_ips = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b', text)
             if found_ips:
                 cleaned = [item.split(':')[0] for item in found_ips]
@@ -771,8 +770,8 @@ def finalize_and_send(working_results, total_ips, header_prefix, save_filename, 
             target_str, lat, country = item
             clean_ips_for_file.append(target_str)
     
-    # ذخیره به صورت افقی و یک خطی در فایل خروجی
-    save_to_file(save_filename, ", ".join(clean_ips_for_file))
+    # ذخیره به صورت عمودی (زیر هم) در فایل خروجی
+    save_to_file(save_filename, "\n".join(clean_ips_for_file))
     if working_results:
         send_results_by_country(working_results, header_prefix, is_config)
 
@@ -1053,8 +1052,8 @@ def menu_option_8_udp_tcp():
     working_results.sort(key=lambda x: x[1])
     clean_ips_for_file = [item[0] for item in working_results]
     
-    # ذخیره افقی و یک خطی در فایل
-    save_to_file(filename, ", ".join(clean_ips_for_file))
+    # ذخیره عمودی (زیر هم) در فایل
+    save_to_file(filename, "\n".join(clean_ips_for_file))
     
     if working_results:
         country_groups = {}
@@ -1065,11 +1064,11 @@ def menu_option_8_udp_tcp():
             country_groups[country].append(target_str)
         proto_text = "TCP Protocol Test" if sub_choice == "2" else "UDP Protocol Test"
         for country, items in country_groups.items():
-            horizontal_list = ", ".join(items)
+            vertical_list = "\n".join(items)
             lines = [
                 f"📊 Scan Results\n{proto_text}",
                 f"Country: {country} | Count: {len(items)}",
-                f"\n{horizontal_list}\n",
+                f"\n{vertical_list}\n",
                 f"Clean IPs provided by:\nTelegram Admin: {TELEGRAM_ID}\nRubika Admin: {RUBIKA_ID}"
             ]
             single_message = "\n".join(lines)
